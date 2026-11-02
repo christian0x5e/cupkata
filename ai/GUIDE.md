@@ -1,0 +1,139 @@
+# Piloter Cupkata : guide pour les IA
+
+Cupkata est un éditeur vidéo de bureau pour Windows. Ce guide explique comment le piloter par son API locale.
+Tout ce que tu fais apparaît en direct dans la fenêtre de l'utilisateur, qui peut travailler en même temps que toi.
+
+## Se connecter
+
+L'utilisateur active l'accès avec le bouton **IA** de la barre du haut. L'API écoute alors sur `http://127.0.0.1:<port>`.
+L'adresse et le jeton figurent dans le panneau, et dans `%APPDATA%\cupkata\control.json` tant que l'accès est actif.
+Le jeton change à chaque activation. Si tu reçois `401`, relis-le ou redemande-le.
+
+Envoie `Authorization: Bearer <jeton>` à chaque requête. Les requêtes portant un en-tête `Origin` sont refusées : appelle l'API depuis un programme, pas depuis une page web.
+
+| Requête | Rôle |
+| --- | --- |
+| `GET /v1/guide` | Ce guide |
+| `GET /v1/capabilities` | Toutes les commandes et leurs arguments (JSON Schema) |
+| `GET /v1/state` | Même résultat que la commande `get_state` |
+| `GET /v1/frame?time=2.5` | Image PNG du montage à cet instant |
+| `POST /v1/command` | Exécute une commande |
+
+```bash
+curl -X POST http://127.0.0.1:47821/v1/command \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"command":"media_import","args":{"paths":["C:\\Users\\moi\\Videos\\plage.mp4"]}}'
+```
+
+Réponse en cas de succès : `{"ok":true,"result":{...}}`.
+Réponse en cas d'échec : `{"ok":false,"error":{"code":"...","message":"..."}}`, avec un statut HTTP 4xx ou 5xx.
+
+### Avec MCP
+
+Pour un client MCP, déclare le pont fourni. Chaque commande devient un outil du même nom, et `read_guide` donne ce guide.
+
+```json
+{ "mcpServers": { "cupkata": { "command": "node", "args": ["C:\\Users\\chris\\cupkata\\ai\\cupkata-mcp.cjs"] } } }
+```
+
+Avec la version installée, le script se trouve dans `resources\app.asar.unpacked\ai\cupkata-mcp.cjs`.
+
+## Le modèle
+
+Un **média** est un fichier importé. Un **clip** est un morceau de média, ou un texte, un effet ou un filtre, placé sur la timeline. Un même média peut servir à plusieurs clips.
+
+Tous les temps sont en **secondes**. Les positions sont des **fractions de l'image** : `x: 0.5, y: 0.5` est le centre.
+
+Champs communs d'un clip :
+
+| Champ | Sens |
+| --- | --- |
+| `id` | Identifiant, à relire dans les réponses |
+| `track` | `video`, `audio`, `text`, `fx` ou `filter` |
+| `lane` | Ligne dans la piste, à partir de 0 |
+| `start` | Début sur la timeline |
+| `duration` | Durée sur la timeline |
+| `in` | Point de départ dans le fichier source |
+| `mediaId` | Média utilisé (`null` pour un texte, un effet ou un filtre) |
+
+Règles à connaître :
+
+- **Piste principale** : `track: "video", lane: 0`. Ses clips ne se chevauchent jamais. Une transition n'y joue qu'entre deux clips exactement collés.
+- **Incrustations** : les lignes vidéo au-dessus de 0. Chaque clip y a sa position, sa taille, sa rotation et son opacité (`transform`).
+- **Lignes vides** : elles sont renumérotées automatiquement. Relis donc `lane` dans les réponses au lieu de le supposer.
+- **Ordre de rendu** : piste principale, incrustations, filtres, effets, puis textes par-dessus.
+- **Vitesse** : à la vitesse `s`, un clip montre `s` secondes de sa source par seconde de timeline.
+
+## Champs de `clip_update`
+
+`patch` ne contient que ce qui change. Les objets sont fusionnés : `{"color":{"contrast":1.2}}` garde la luminosité et la saturation actuelles.
+Pour déplacer ou raccourcir un clip, utilise `clip_move`, `clip_trim` ou `clips_set_duration`.
+
+| Piste | Champ | Valeurs |
+| --- | --- | --- |
+| `video`, `audio` | `volume` | 0 à 2 (1 = normal) |
+| `video`, `audio`, `fx`, `filter` | `fadeIn`, `fadeOut` | secondes |
+| `video`, `audio` | `muted` | booléen |
+| `audio` | `duck` | `{level}` de 0 à 1 : baisse ce son quand une voix parle, ou `null` |
+| `video` | `color` | `{brightness, contrast}` de 0.5 à 1.5, `{saturation}` de 0 à 2 |
+| `video` | `effect` | `{type, intensity}`, ou `null` |
+| `video` | `filter` | `{id, amount}`, ou `null` |
+| `video` | `transition` | `{type, duration}` : transition à l'entrée du clip, ou `null` |
+| `video` | `background` | `{mode, blur, color}` : fond quand l'image ne remplit pas le cadre, ou `null` |
+| `video` | `transform` | `{x, y, scale, rotation, opacity}` pour une incrustation, ou `null` |
+| `fx` | `effect` | `{type, intensity}` |
+| `filter` | `filter` | `{id, amount}` |
+| `text` | `text` | 500 caractères au plus |
+| `text` | `style` | Voir `text_default_style` dans `list_catalog` (couleurs au format `#rrggbb`) |
+| `text` | `anim` | `{in, out, loop, duration}` |
+
+Les identifiants valides (effets, filtres, transitions, polices, styles de texte) sont donnés par `list_catalog`. Ne les devine pas.
+
+## Méthode conseillée
+
+1. Lis `get_state`. Si `recovery_pending` vaut `true`, demande à l'utilisateur s'il veut reprendre son montage, puis réponds avec `recovery_choose`. Tout le reste est refusé d'ici là.
+2. Si le projet contient déjà du travail, ne l'écrase pas. `project_new` et `project_open` refusent de perdre des modifications non enregistrées. N'utilise `discard_changes` que si l'utilisateur te l'a demandé.
+3. Appelle `list_catalog` une fois, puis importe les fichiers avec `media_import` et garde les `id` renvoyés.
+4. Construis le montage et réutilise les `id` renvoyés par chaque commande.
+5. **Vérifie en regardant** : récupère des images avec `GET /v1/frame` aux moments importants. Si `X-Cupkata-Settled` vaut `false`, l'image n'était pas prête : redemande-la.
+6. Enregistre avec `project_save`, puis lance `export_start`.
+7. Suis l'export avec `get_state` jusqu'à ce que `export.status` vaille `done` ou `error`, sans interroger plus d'une fois par seconde.
+
+### Exemple : une vidéo verticale avec un titre
+
+```jsonc
+{"command":"set_settings","args":{"ratio":"9:16","resolution":"1080p"}}
+{"command":"media_import","args":{"paths":["C:\\Videos\\a.mp4","C:\\Videos\\b.mp4","C:\\Musique\\fond.mp3"]}}
+{"command":"clip_add","args":{"media_id":"<a>"}}
+{"command":"clip_add","args":{"media_id":"<b>"}}
+{"command":"clip_update","args":{"clip_id":"<clip b>","patch":{"transition":{"type":"fade","duration":0.5},"background":{"mode":"blur"}}}}
+{"command":"clip_add","args":{"media_id":"<fond>","start":0}}
+{"command":"clip_update","args":{"clip_id":"<clip fond>","patch":{"volume":0.4,"fadeOut":2}}}
+{"command":"text_add","args":{"text":"Mes vacances","start":0,"duration":3,"preset":"impact","style":{"y":0.2},"anim":{"in":"pop"}}}
+{"command":"project_save","args":{"path":"C:\\Videos\\vacances.cupkata"}}
+{"command":"export_start","args":{"path":"C:\\Videos\\vacances.mp4"}}
+```
+
+## Erreurs
+
+| Code | Que faire |
+| --- | --- |
+| `bad_args` | Corrige les arguments : le message dit lesquels |
+| `unknown_command` | Consulte `/v1/capabilities` |
+| `not_found` | Relis `get_state` : l'identifiant a disparu, peut-être supprimé par l'utilisateur |
+| `invalid` | L'action n'a pas de sens ici (chevauchement, instant hors du clip…) : le message explique pourquoi |
+| `busy` | Un export ou une tâche tourne : attends, ou annule avec `export_cancel` ou `task_cancel` |
+| `unsaved_changes` | Enregistre le projet, ou demande à l'utilisateur s'il accepte de perdre ses modifications |
+| `file_exists` | Choisis un autre nom, ou passe `overwrite` si l'utilisateur est d'accord |
+| `recovery_pending` | Voir l'étape 1 |
+| `unauthorized` | Le jeton a changé, ou l'accès a été désactivé puis réactivé |
+
+## Bon à savoir
+
+- **Exécution** : les commandes passent une à la fois, dans l'ordre d'arrivée. Attends chaque réponse avant d'envoyer la suivante.
+- **Commandes longues** : `clip_cutout`, `clip_cut_silences`, `text_speak`, `texts_translate` et `subtitles_generate` ne répondent qu'à la fin, parfois après plusieurs minutes, car un modèle peut être téléchargé la première fois. Prévois un long délai d'attente. `get_state` reste disponible et indique dans `task` ce qui tourne.
+- **Annulation** : `undo` et `redo` couvrent les clips, pas les réglages du projet ni les imports. `media_remove` n'est pas annulable.
+- **Fidélité** : l'aperçu et l'export utilisent les mêmes calculs. Une image de `/v1/frame` représente donc le rendu final, en 720p sur le petit côté.
+- **Fenêtre** : ne la laisse pas réduite pendant une capture d'image, car l'aperçu peut alors cesser de se dessiner.
+- **Respect de l'utilisateur** : il voit tes actions et peut intervenir. Relis `get_state` avant une série de modifications si du temps a passé. Ne remplace pas ses fichiers sans son accord.
+- **Pas encore pilotable** : l'enregistrement de voix off, la recherche et la génération de musique, l'import de filtres `.cube`. Demande à l'utilisateur de le faire dans l'interface, puis relis `get_state`.

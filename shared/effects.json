@@ -1,0 +1,30 @@
+{
+  "ids": [
+    "blur", "bw", "sepia", "vignette", "glow", "sparkle", "dream", "wave", "shake", "pulse", "rgb",
+    "invert", "pop", "rainbow", "zoomslow", "sway", "flash", "mirror", "pixel", "cinema", "vhs", "oldfilm",
+    "snow", "confetti", "hearts", "lightleak",
+    "swirl", "bulge", "zoomblur", "crt", "glitch", "shockwave", "emboss", "halftone", "tiltshift", "bloom", "kaleido", "heat",
+    "sparkblur",
+    "theend", "opening", "irisout", "irisin", "countdown", "filmburn", "filmstrip", "rec", "spotlight", "rain", "bokeh", "fireflies"
+  ],
+  "gpu": ["swirl", "bulge", "zoomblur", "crt", "glitch", "shockwave", "emboss", "halftone", "tiltshift", "bloom", "kaleido", "heat", "sparkblur"],
+  "blur": { "radius": 12 },
+  "glow": { "radius": 10, "opacity": 0.6 },
+  "dream": { "radius": 8, "opacity": 0.4, "sparkle": 0.7 },
+  "shake": { "amp": 0.02, "fx": [7.3, 13.1], "fy": [6.1, 11.7], "px": [0, 1.7], "py": [0.5, 2.3], "w": [0.6, 0.4] },
+  "pulse": { "amp": 0.15, "freq": 1.2 },
+  "wave": { "amp": 0.015, "waves": 3, "freq": 1.5 },
+  "rgb": { "amp": 0.012 },
+  "vignette": { "inner": 0.35, "strength": 0.85 },
+  "pop": { "contrast": 0.5, "saturation": 0.8 },
+  "rainbow": { "minSpeed": 0.1, "maxSpeed": 0.5 },
+  "zoomslow": { "amount": 0.25 },
+  "sway": { "angle": 4, "freq": 0.5, "zoom": 0.12 },
+  "flash": { "freq": 2, "width": 0.25 },
+  "pixel": { "min": 4, "max": 40 },
+  "cinema": { "bar": 0.12 },
+  "vhs": { "shift": 0.004 },
+  "oldfilm": { "sepia": 0.8 },
+  "background": { "dim": 0.8, "margin": 1.15, "sigmaMin": 0.01, "sigmaRange": 0.05 },
+  "duck": { "attack": 0.15, "release": 0.4, "threshold": 20, "window": 0.1, "mergeGap": 0.4, "minLength": 0.25, "level": 0.25 }
+}
