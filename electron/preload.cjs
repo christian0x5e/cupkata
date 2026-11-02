@@ -101,6 +101,7 @@ contextBridge.exposeInMainWorld('cupkata', {
   controlStatus: () => ipcRenderer.invoke('control:status'),
   controlSet: (on) => ipcRenderer.invoke('control:set', !!on),
   controlOpenProject: (filePath) => ipcRenderer.invoke('control:open-project', filePath),
+  controlImportFilters: (paths) => ipcRenderer.invoke('control:import-filters', paths),
   controlCheckTarget: (filePath, extension, overwrite) => ipcRenderer.invoke('control:check-target', filePath, extension, !!overwrite),
   controlRespond: (response) => ipcRenderer.send('control:response', response),
   onControlRequest: (cb) => {

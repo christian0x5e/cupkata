@@ -528,7 +528,7 @@ export default function App() {
   const control = useRef(null);
   control.current = {
     state, time, playing, zone, total, resolution, ratio, normalize, projectPath, recovery, exp, aiJob, busy, dirty, hasContent, notices,
-    preview: previewCapture, serialize, applyProject, seek, togglePlay, setPlaying, setHoverTime, setZone, setResolution, setRatio, setNormalize,
+    preview: previewCapture, serialize, applyProject, seek, togglePlay, setBusy, setPlaying, setHoverTime, setZone, setResolution, setRatio, setNormalize,
     freezeFrame, reverseClip, cutoutClip, cutSilences, speakText, translateTexts, startExport, cleanError,
     generateSubtitles: async (options) => {
       setBusy('subtitles');

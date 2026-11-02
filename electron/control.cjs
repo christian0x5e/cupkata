@@ -68,6 +68,7 @@ function createControl({ app, ipcMain, getWindow, handlers }) {
 
   // What only this process can do for a command: reading a project and checking a file to write.
   ipcMain.handle('control:open-project', (_e, filePath) => handlers.openProject(filePath));
+  ipcMain.handle('control:import-filters', (_e, paths) => handlers.importFilters(paths));
   ipcMain.handle('control:check-target', async (_e, filePath, extension, overwrite) => {
     if (typeof filePath !== 'string' || !path.isAbsolute(filePath)) throw coded('bad_path', 'Donne un chemin absolu.');
     if (path.extname(filePath).toLowerCase() !== extension) throw coded('bad_path', `Le fichier doit avoir l’extension ${extension}.`);

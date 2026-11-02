@@ -200,10 +200,14 @@ ipcMain.handle('filters:import', async (event) => {
     properties: ['openFile', 'multiSelections'],
     filters: [{ name: 'Filtre LUT 3D', extensions: ['cube'] }],
   });
-  if (res.canceled) return [];
+  return res.canceled ? [] : readCubes(res.filePaths);
+});
+
+async function readCubes(files) {
   const out = [];
-  for (const file of res.filePaths.slice(0, 20)) {
+  for (const file of files.slice(0, 20)) {
     try {
+      if (path.extname(file).toLowerCase() !== '.cube') throw new Error('Ce n’est pas un fichier .cube');
       const lut = cubeToLut(await fs.promises.readFile(file, 'utf8'));
       out.push({ id: `custom:${crypto.randomUUID()}`, name: path.basename(file, path.extname(file)).slice(0, 60), ...lut });
     } catch (err) {
@@ -211,7 +215,7 @@ ipcMain.handle('filters:import', async (event) => {
     }
   }
   return out;
-});
+}
 
 ipcMain.handle('media:relink', async (event) => {
   const res = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), {
@@ -846,7 +850,7 @@ ipcMain.handle('shell:show', (_e, p) => {
 });
 
 let mainWindow = null;
-const control = createControl({ app, ipcMain, getWindow: () => mainWindow, handlers: { openProject: readProjectFile } });
+const control = createControl({ app, ipcMain, getWindow: () => mainWindow, handlers: { openProject: readProjectFile, importFilters: readCubes } });
 
 function createWindow() {
   const win = new BrowserWindow({

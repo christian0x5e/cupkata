@@ -3,6 +3,7 @@
   "commands": [
     { "name": "get_state", "description": "État complet : projet, médias, clips, tête de lecture, sélection, export et tâche en cours.", "args": {} },
     { "name": "list_catalog", "description": "Identifiants valides : effets, transitions, filtres, polices, styles et animations de texte, formats, langues.", "args": {} },
+    { "name": "wait_idle", "description": "Attend la fin de l'export ou de la tâche en cours, jusqu'à timeout_seconds (défaut 60, maximum 300). Renvoie idle, export et task. À préférer à des appels répétés de get_state.", "args": { "timeout_seconds": { "type": "number", "exclusiveMinimum": 0, "maximum": 300 } } },
     { "name": "capture_frame", "description": "Image PNG du montage à un instant (aperçu 720p), pour vérifier le résultat visuellement.", "args": { "time": { "type": "number", "minimum": 0 } } },
 
     { "name": "project_new", "description": "Nouveau projet vide. Refusé si des modifications ne sont pas enregistrées, sauf discard_changes.", "args": { "discard_changes": { "type": "boolean" } } },
@@ -14,6 +15,10 @@
     { "name": "redo", "description": "Rétablit la dernière modification annulée.", "args": {} },
 
     { "name": "media_import", "description": "Ajoute des fichiers au projet par chemins absolus (maximum 200). Renvoie les médias ajoutés et les erreurs.", "args": { "paths": { "type": "array", "items": { "type": "string" }, "minItems": 1, "maxItems": 200 } }, "required": ["paths"] },
+    { "name": "filters_import", "description": "Importe des filtres .cube (LUT 3D) par chemins absolus (maximum 20). Leurs id s'utilisent ensuite comme ceux des autres filtres.", "args": { "paths": { "type": "array", "items": { "type": "string" }, "minItems": 1, "maxItems": 20 } }, "required": ["paths"] },
+    { "name": "music_search", "description": "Cherche des musiques libres sur Internet (Internet Archive, ccMixter, Openverse). Chaque résultat indique sa licence.", "args": { "query": { "type": "string", "maxLength": 80 }, "page": { "type": "integer", "minimum": 0, "maximum": 50 }, "commercial_only": { "type": "boolean" } } },
+    { "name": "music_download", "description": "Télécharge un résultat de music_search (downloadable: true) et l'ajoute aux médias. Renvoie la mention de crédit à transmettre à l'utilisateur.", "args": { "id": { "type": "string" } }, "required": ["id"] },
+    { "name": "music_generate", "description": "Crée une musique par IA locale (5 à 30 s) et l'ajoute aux médias. Peut être long : un modèle est téléchargé la première fois.", "args": { "prompt": { "type": "string", "minLength": 1, "maxLength": 300 }, "duration": { "type": "number", "minimum": 5, "maximum": 30 } }, "required": ["prompt"] },
     { "name": "media_remove", "description": "Retire un média du projet, avec tous ses clips. Ces clips ne peuvent pas être restaurés par undo.", "args": { "media_id": { "type": "string" } }, "required": ["media_id"] },
 
     { "name": "clip_add", "description": "Place un média sur la timeline. Piste principale (video, lane 0) : à la suite ou au premier espace libre après start.", "args": { "media_id": { "type": "string" }, "track": { "enum": ["video", "audio"] }, "start": { "type": "number", "minimum": 0 }, "lane": { "type": "integer", "minimum": 0 } }, "required": ["media_id"] },
@@ -51,6 +56,6 @@
 
     { "name": "export_start", "description": "Démarre l'export MP4 et répond aussitôt. Suivre export dans get_state. Ne remplace un fichier existant qu'avec overwrite.", "args": { "path": { "type": "string" }, "overwrite": { "type": "boolean" } }, "required": ["path"] },
     { "name": "export_cancel", "description": "Annule l'export en cours.", "args": {} },
-    { "name": "task_cancel", "description": "Annule la tâche IA en cours (détourage, silences, voix, traduction ou sous-titres).", "args": {} }
+    { "name": "task_cancel", "description": "Annule la tâche IA en cours (détourage, silences, voix, traduction, sous-titres ou musique).", "args": {} }
   ]
 }

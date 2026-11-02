@@ -158,6 +158,10 @@ const settle = async () => {
   await macrotask();
 };
 
+// Same limit as electron/project.cjs: more would be lost when the project is saved.
+const MAX_CUSTOM_FILTERS = 30;
+const mediaInfo = ({ id, path, name, type, duration, width, height, hasAudio }) => ({ id, path, name, type, duration, width, height, hasAudio });
+
 function clipOf(a, id, ...tracks) {
   const clip = a.state.clips.find((c) => c.id === id);
   if (!clip) fail('not_found', `Clip inconnu : ${id}.`);
@@ -221,6 +225,16 @@ export function createCommands(app, dispatchRaw) {
   return {
     get_state: () => describe(app.current),
     list_catalog: () => catalog(app.current.state.filters),
+    wait_idle: async (args) => {
+      const limit = performance.now() + (args.timeout_seconds ?? 60) * 1000;
+      let idle = !isWorking(app.current);
+      while (!idle && performance.now() < limit) {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        idle = !isWorking(app.current);
+      }
+      const a = app.current;
+      return { idle, export: a.exp, task: a.aiJob || (a.busy ? { label: a.busy } : null) };
+    },
     capture_frame: async (args) => {
       const a = app.current;
       flushSync(() => {
@@ -279,10 +293,41 @@ export function createCommands(app, dispatchRaw) {
       return {
         media: results.filter((r) => !r.error).map((r) => {
           const m = added.get(r.path.toLowerCase()) || known.get(r.path.toLowerCase());
-          return { id: m.id, path: m.path, name: m.name, type: m.type, duration: m.duration, width: m.width, height: m.height, hasAudio: m.hasAudio };
+          return mediaInfo(m);
         }),
         errors: results.filter((r) => r.error).map((r) => ({ path: r.path, message: r.error })),
       };
+    },
+    filters_import: async (args) => {
+      const results = await api.controlImportFilters(args.paths);
+      const filters = results.filter((r) => !r.error);
+      if (app.current.state.filters.length + filters.length > MAX_CUSTOM_FILTERS) fail('invalid', `Un projet garde ${MAX_CUSTOM_FILTERS} filtres importés au plus.`);
+      for (const filter of filters) dispatch({ type: 'ADD_FILTER', filter });
+      return { filters: filters.map(({ id, name }) => ({ id, name })), errors: results.filter((r) => r.error).map(({ name, error }) => ({ name, message: error })) };
+    },
+    music_search: async (args) => {
+      const { results, failed } = await api.searchMusic({ query: args.query, page: args.page, commercial: !!args.commercial_only });
+      return {
+        results: results.map(({ id, title, artist, source, duration, licence, commercial, credit, downloadable, page }) => ({ id, title, artist, source, duration, licence, commercial, credit_required: credit, downloadable, page })),
+        failed_sources: failed.map((f) => f.source),
+      };
+    },
+    music_download: async (args) => {
+      const { item, credit, needsCredit } = await api.downloadMusic(args.id);
+      const id = crypto.randomUUID();
+      dispatch({ type: 'ADD_MEDIA', items: [{ ...item, id }] });
+      return { media: mediaInfo({ ...item, id }), credit, credit_required: needsCredit };
+    },
+    music_generate: async (args) => {
+      flushSync(() => app.current.setBusy('music'));
+      try {
+        const item = await api.generateMusic({ prompt: args.prompt, duration: args.duration ?? 10 });
+        const id = crypto.randomUUID();
+        dispatch({ type: 'ADD_MEDIA', items: [{ ...item, id }] });
+        return { media: mediaInfo({ ...item, id }) };
+      } finally {
+        flushSync(() => app.current.setBusy(null));
+      }
     },
     media_remove: (args) => {
       mediaExists(app.current, args.media_id);
@@ -496,6 +541,7 @@ export function createCommands(app, dispatchRaw) {
     task_cancel: () => {
       api.aiCancel();
       api.cancelTranscription();
+      api.cancelMusic();
       return { cancelled: true };
     },
   };
@@ -505,9 +551,10 @@ function mediaExists(a, id) {
   if (!a.state.media.some((m) => m.id === id)) fail('not_found', `Média inconnu : ${id}.`);
 }
 const isExporting = (a) => a.exp?.status === 'preparing' || a.exp?.status === 'running';
+const isWorking = (a) => isExporting(a) || !!a.aiJob || !!a.busy;
 
 // Commands that only read, or that stop what's running, don't wait for the running work to finish.
-const ALWAYS_ALLOWED = new Set(['get_state', 'list_catalog', 'export_cancel', 'task_cancel', 'recovery_choose']);
+const ALWAYS_ALLOWED = new Set(['get_state', 'list_catalog', 'wait_idle', 'export_cancel', 'task_cancel', 'recovery_choose']);
 const SPECS = new Map(SPEC.commands.map((c) => [c.name, c]));
 
 // Listens for commands, one at a time, in the order they arrive. onLog receives each finished one.

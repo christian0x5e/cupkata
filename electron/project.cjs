@@ -230,6 +230,7 @@ function toFileContent(data, filePath) {
       settings: clean.settings,
       media: clean.media.map((m) => ({ ...m, relPath: dir ? path.relative(dir, m.path) : null })),
       clips: clean.clips,
+      filters: clean.filters,
     },
     null,
     2,
