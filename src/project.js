@@ -41,6 +41,13 @@ export const acceptsTrack = (m, track) =>
 export const TEXT_DEFAULT_DURATION = 3;
 export const FX_ITEM_DURATION = 3;
 export const FX_ITEM_FADE = 0.5;
+// Ready-made speed changes: the clip is cut in equal parts of its source, each with its own speed.
+export const SPEED_RAMPS = [
+  { id: 'rise', label: 'Accélération', speeds: [0.5, 0.75, 1, 1.5, 2, 3] },
+  { id: 'fall', label: 'Ralentissement', speeds: [3, 2, 1.5, 1, 0.75, 0.5] },
+  { id: 'hero', label: 'Moment fort', speeds: [3, 2, 0.75, 0.4, 0.4, 0.75, 2, 3] },
+  { id: 'pulse', label: 'Pulsation', speeds: [2, 0.5, 2, 0.5, 2, 0.5] },
+];
 const UNFADED_FX = new Set(['theend', 'opening', 'irisout', 'irisin', 'countdown']);
 
 // Weight (0..1) of an effect-track item at time tau since its start: ramps in and out with its fades,
@@ -938,12 +945,12 @@ function applyAction(state, action) {
     }
 
     case 'ADD_FILTER_ITEM': {
-      const duration = FX_ITEM_DURATION;
+      const duration = action.duration ?? FX_ITEM_DURATION;
       const { start, lane } = placeItem(state.clips, 'filter', { ...action, start: action.start ?? 0 }, duration);
       const item = {
         id: crypto.randomUUID(), mediaId: null, track: 'filter', lane, start, in: 0, duration,
         filter: { id: action.filterId, amount: action.amount ?? 0.8 },
-        fadeIn: FX_ITEM_FADE, fadeOut: FX_ITEM_FADE,
+        fadeIn: action.fade ?? FX_ITEM_FADE, fadeOut: action.fade ?? FX_ITEM_FADE,
       };
       return commit(state, [...state.clips, item], { selectedId: item.id });
     }
@@ -1007,6 +1014,40 @@ function applyAction(state, action) {
               : x,
         ),
       );
+    }
+
+    case 'SPEED_RAMP': {
+      const c = state.clips.find((x) => x.id === action.id);
+      if (!c || !action.speeds?.length) return state;
+      const part = (c.duration * clipSpeed(c)) / action.speeds.length;
+      let at = c.start;
+      const pieces = action.speeds.map((raw, i) => {
+        const speed = Math.min(MAX_SPEED, Math.max(MIN_SPEED, raw));
+        const piece = {
+          ...c,
+          id: i ? crypto.randomUUID() : c.id,
+          start: at,
+          in: c.in + part * i,
+          speed,
+          duration: part / speed,
+          fadeIn: i ? 0 : c.fadeIn,
+          fadeOut: i === action.speeds.length - 1 ? c.fadeOut : 0,
+          ...(i ? { transition: undefined } : {}),
+        };
+        at += piece.duration;
+        return piece;
+      });
+      const delta = at - end(c);
+      const after = state.clips
+        .filter((x) => x.id !== c.id && onLane(x, c.track, laneOf(c)) && x.start >= end(c) - EPS)
+        .sort((a, b) => a.start - b.start);
+      const ripple = c.track === 'video' && laneOf(c) === 0;
+      const push = ripple ? delta : after.length ? Math.max(0, at - after[0].start) : 0;
+      const moved = new Set(push ? after.map((x) => x.id) : []);
+      return commit(state, state.clips.flatMap((x) => {
+        if (x.id === c.id) return pieces;
+        return moved.has(x.id) ? [{ ...x, start: Math.max(0, x.start + push) }] : [x];
+      }), { selectedId: c.id, multi: [] });
     }
 
     // Freeze frame: the video clip is cut at `time` and a still of that frame (already extracted to

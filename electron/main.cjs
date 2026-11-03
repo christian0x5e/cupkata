@@ -5,7 +5,7 @@ const os = require('os');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
 const { Readable } = require('stream');
-const { cleanVoiceFile, ffmpegPath, probe, computePeaks, monoFiles, buildExportArgs, planChunks, gpuJobs, ALL_EXT, VIDEO_EXT, IMAGE_EXT, AUDIO_EXT, MIME, ext } = require('./media.cjs');
+const { stabilizeFile, chromaKeyFile, cleanVoiceFile, ffmpegPath, probe, computePeaks, monoFiles, buildExportArgs, planChunks, gpuJobs, ALL_EXT, VIDEO_EXT, IMAGE_EXT, AUDIO_EXT, MIME, ext } = require('./media.cjs');
 const { once } = require('events');
 const { sanitize, resolveMediaPath, toFileContent, writeAtomic } = require('./project.cjs');
 const { transcribe, MODELS, LANGUAGES } = require('./transcribe.cjs');
@@ -404,6 +404,34 @@ ipcMain.handle('media:clean-voice', async (_e, filePath) => {
       fs.promises.rm(work, { force: true }).catch(() => {});
     }
   }
+  return probeOne(out);
+});
+
+ipcMain.handle('media:stabilize', async (_e, filePath) => {
+  if (!isAllowed(filePath)) throw new Error('Média introuvable');
+  const source = path.parse(filePath);
+  const stat = await fs.promises.stat(filePath);
+  const key = crypto.createHash('sha1').update(`${filePath}|${stat.size}|${stat.mtimeMs}`).digest('hex').slice(0, 8);
+  const out = path.join(await madeDir('Vidéos stabilisées'), `${source.name} stable ${key}.mp4`);
+  if (!fs.existsSync(out)) {
+    const work = `${out}.tmp.mp4`;
+    const encoder = await detectEncoder(ffmpegPath);
+    try {
+      await withFallback(encoder, (e) => stabilizeFile(filePath, work, e, intermediateArgs(e)));
+      await fs.promises.rename(work, out);
+    } finally {
+      fs.promises.rm(work, { force: true }).catch(() => {});
+    }
+  }
+  return probeOne(out);
+});
+
+ipcMain.handle('media:chroma', async (_e, r) => {
+  if (!isAllowed(r?.path)) throw new Error('Média introuvable');
+  const isImage = !!r.isImage;
+  const color = /^#[0-9a-f]{6}$/i.test(r.color || '') ? r.color : null;
+  const out = path.join(await madeDir('Détourages'), stampName(`${path.parse(r.path).name} fond vert`, isImage ? 'png' : 'webm'));
+  await chromaKeyFile({ file: r.path, isImage, start: span(r.start), span: Math.max(0.1, span(r.span, 3600)), color, tolerance: Number(r.tolerance) || 0.15, colorSpace: typeof r.colorSpace === 'string' ? r.colorSpace : null, height: Number(r.height) || 1080 }, out);
   return probeOne(out);
 });
 

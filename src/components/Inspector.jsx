@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { clipAudio, clipBackground, clipColor, clipSpeed, clipTransform, isOverlay, MAX_SPEED, MIN_SPEED, laneOf, maxDuration, MAX_VOLUME, OVERLAY_TRANSFORM, overlaps, TRANSITIONS } from '../project.js';
+import { SPEED_RAMPS, clipAudio, clipBackground, clipColor, clipSpeed, clipTransform, isOverlay, MAX_SPEED, MIN_SPEED, laneOf, maxDuration, MAX_VOLUME, OVERLAY_TRANSFORM, overlaps, TRANSITIONS } from '../project.js';
 import { formatTime } from '../format.js';
 import { clearKeyframes, isAnimated, keyframeAt, removeKeyframe, setKeyframe, transformPatch, valueAt } from '../keyframes.js';
 import TextInspector from './TextInspector.jsx';
@@ -254,6 +254,7 @@ function BackgroundInspector({ clip, clips, dispatch }) {
 
 // Open-source AI tools that run on this computer.
 function AiTools({ clip, media, ai }) {
+  const [tolerance, setTolerance] = useState(0.15);
   const [minSilence, setMinSilence] = useState(0.5);
   const [every, setEvery] = useState(1);
   const followable = clip.track === 'video' && laneOf(clip) === 0 && media.type === 'video' && media.alpha !== true;
@@ -267,6 +268,21 @@ function AiTools({ clip, media, ai }) {
         <button className={`btn ai-btn ${clip.cutout ? 'active' : ''}`} disabled={ai.busy} onClick={() => ai.cutout(clip)}
           title="Supprime l'arrière-plan derrière les personnes (modèle MODNet, sur ton ordinateur)">
           {clip.cutout ? '↺ Remettre l’arrière-plan' : '✂ Supprimer l’arrière-plan'}
+        </button>
+      )}
+      {picture && !clip.cutout && (
+        <div className="ai-row">
+          <button className="btn ai-btn" disabled={ai.busy} onClick={() => ai.chroma(clip, { tolerance })}
+            title="Retire un fond vert ou bleu uni. Sa couleur est lue dans les coins hauts de l’image. Une copie est créée : ton original ne change pas.">
+            {ai.working === 'chroma' ? 'Retrait du fond…' : '🟩 Fond vert'}
+          </button>
+          <input type="range" min={0.05} max={0.4} step={0.01} value={tolerance} onChange={(e) => setTolerance(Number(e.target.value))} title="Tolérance : monte-la s’il reste du vert, baisse-la si le sujet disparaît" />
+        </div>
+      )}
+      {clip.track === 'video' && media.type === 'video' && (
+        <button className={`btn ai-btn ${clip.stable ? 'active' : ''}`} disabled={ai.busy || (!clip.stable && !!(clip.cleaned || clip.cutout || clip.reversed))} onClick={() => ai.stabilize(clip)}
+          title="Corrige les tremblements de la caméra. Une copie est créée : ton original ne change pas. Peut prendre du temps sur une longue vidéo.">
+          {ai.working === 'stable' ? 'Stabilisation…' : clip.stable ? '↺ Remettre la vidéo d’origine' : '🎥 Stabiliser la vidéo'}
         </button>
       )}
       {sound && (
@@ -295,7 +311,7 @@ function AiTools({ clip, media, ai }) {
         </div>
       )}
       {sound && (
-        <button className={`btn ai-btn ${clip.cleaned ? 'active' : ''}`} disabled={ai.busy} onClick={() => ai.clean(clip)}
+        <button className={`btn ai-btn ${clip.cleaned ? 'active' : ''}`} disabled={ai.busy || !!clip.stable} onClick={() => ai.clean(clip)}
           title="Réduit le bruit de fond et égalise la voix. Une copie du fichier est créée : ton original ne change pas.">
           {ai.working === 'clean' ? 'Nettoyage…' : clip.cleaned ? '↺ Remettre le son d’origine' : '🎙 Nettoyer la voix'}
         </button>
@@ -365,6 +381,15 @@ function SpeedInspector({ clip, media, dispatch, busy, onReverse, onFreeze, canF
         ))}
       </div>
       <p className="hint">La durée du clip s'adapte ; la voix garde sa hauteur.</p>
+      {media?.type !== 'image' && (
+        <div className="ramp-presets">
+          {SPEED_RAMPS.map((r) => (
+            <button key={r.id} className="btn small" title="Coupe le clip en morceaux à vitesses progressives" onClick={() => dispatch({ type: 'SPEED_RAMP', id: clip.id, speeds: r.speeds })}>
+              {r.label}
+            </button>
+          ))}
+        </div>
+      )}
       {media.type === 'video' && (
         <div className="speed-actions">
           <button className={`btn ${clip.reversed ? 'active' : ''}`} disabled={!!busy} onClick={() => onReverse(clip)} title="Lire ce clip à l'envers (image et son)">

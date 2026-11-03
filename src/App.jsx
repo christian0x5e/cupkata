@@ -491,6 +491,58 @@ export default function App() {
   }
 
   // Voice cleaning: the clip plays a cleaned copy of its file (a second click puts the original back).
+  async function stabilizeClip(clip) {
+    if (clip.stable) {
+      dispatch({ type: 'SET_SOURCE', id: clip.id, mediaId: clip.stable.mediaId, in: clip.in, extra: { stable: null } });
+      return;
+    }
+    const m = state.media.find((x) => x.id === clip.mediaId);
+    setPlaying(false);
+    setBusy('stable');
+    try {
+      const item = await api.stabilize(m.path);
+      let id = state.media.find((x) => x.path === item.path)?.id;
+      if (!id) {
+        id = crypto.randomUUID();
+        dispatch({ type: 'ADD_MEDIA', items: [{ ...item, id, words: m.words }] });
+      }
+      dispatch({ type: 'SET_SOURCE', id: clip.id, mediaId: id, in: clip.in, extra: { stable: { mediaId: m.id, in: clip.in } } });
+      setNotice({ kind: 'ok', text: 'Vidéo stabilisée : une copie est utilisée, ton original ne change pas.' });
+    } catch (err) {
+      showError(err);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // Green screen: the clip plays a transparent copy, the same way as after an AI cut-out.
+  async function chromaClip(clip, { tolerance, color } = {}) {
+    if (clip.cutout) {
+      dispatch({ type: 'SET_SOURCE', id: clip.id, mediaId: clip.cutout.mediaId, in: clip.cutout.in, extra: { cutout: null } });
+      return;
+    }
+    const m = state.media.find((x) => x.id === clip.mediaId);
+    setPlaying(false);
+    setBusy('chroma');
+    try {
+      const item = await api.chromaKey({ path: m.path, isImage: m.type === 'image', start: clip.in, span: clip.duration * (clip.speed ?? 1), tolerance, color, colorSpace: m.colorSpace, height: m.height });
+      const id = crypto.randomUUID();
+      dispatch({ type: 'ADD_MEDIA', items: [{ ...item, id }] });
+      dispatch({ type: 'SET_SOURCE', id: clip.id, mediaId: id, in: 0, extra: { cutout: { mediaId: m.id, in: clip.in } } });
+      setNotice({ kind: 'ok', text: 'Fond retiré. Place le clip sur une piste d’incrustation pour voir ce qui est en dessous.' });
+    } catch (err) {
+      showError(err);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // Short format in one click: vertical picture, every main clip following its subject.
+  function shortFormat() {
+    setRatio('9:16');
+    return reframeClips(state.clips.filter((c) => c.track === 'video' && laneOf(c) === 0 && !c.reframe?.length));
+  }
+
   async function cleanVoice(clip) {
     if (clip.cleaned) {
       dispatch({ type: 'SET_SOURCE', id: clip.id, mediaId: clip.cleaned.mediaId, in: clip.in, extra: { cleaned: null } });
@@ -716,7 +768,7 @@ export default function App() {
   control.current = {
     state, time, playing, zone, total, resolution, ratio, normalize, projectPath, recovery, exp, aiJob, busy, dirty, hasContent, notices,
     preview: previewCapture, serialize, applyProject, seek, togglePlay, setBusy, setPlaying, setHoverTime, setZone, setResolution, setRatio, setNormalize,
-    freezeFrame, reverseClip, cutoutClip, cutSilences, speakText, translateTexts, startExport, cleanError, reframeClip, cleanVoice, applyBeats, toggleMarker, setCaptions,
+    freezeFrame, reverseClip, cutoutClip, cutSilences, speakText, translateTexts, startExport, cleanError, reframeClip, stabilizeClip, chromaClip, shortFormat, cleanVoice, applyBeats, toggleMarker, setCaptions,
     generateSubtitles: async (options) => {
       setBusy('subtitles');
       try {
@@ -1160,6 +1212,7 @@ export default function App() {
           )}
           {leftTab === 'filters' && (
             <FiltersPanel
+              total={total}
               clip={selectedClip}
               media={selectedClip && state.media.find((m) => m.id === selectedClip.mediaId)}
               custom={state.filters}
@@ -1188,6 +1241,7 @@ export default function App() {
           title="Tire pour élargir ou réduire le panneau Médias (double-clic : taille d'origine)"
         />
         <Preview
+          onShort={shortFormat}
           proxies={proxies}
           media={state.media}
           clips={state.clips}
@@ -1252,7 +1306,7 @@ export default function App() {
           onReverse={reverseClip}
           onFreeze={freezeFrame}
           ai={{
-            cutout: cutoutClip, silences: cutSilences, speak: speakText, reframe: reframeClip, clean: cleanVoice, beats: applyBeats,
+            cutout: cutoutClip, silences: cutSilences, speak: speakText, reframe: reframeClip, clean: cleanVoice, stabilize: stabilizeClip, chroma: chromaClip, beats: applyBeats,
             reframeAll: () => reframeClips(state.clips.filter((c) => c.track === 'video' && laneOf(c) === 0)),
             clearBeats: () => dispatch({ type: 'SET_MARKERS', markers: state.markers.filter((x) => !x.beat) }),
             hasBeatMarkers: state.markers.some((x) => x.beat),

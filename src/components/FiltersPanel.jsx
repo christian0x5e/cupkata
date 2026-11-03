@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { DEFAULT_FILTER_AMOUNT, FILTER_CATEGORIES, filterInfo, PRESETS } from '../filters.js';
+import { adjustmentFilter, DEFAULT_FILTER_AMOUNT, FILTER_CATEGORIES, filterInfo, PRESETS } from '../filters.js';
 import { gpuEngine } from '../gpu/engine.js';
 import { sampleScene } from './EffectsPanel.jsx';
 import SideMenu from './SideMenu.jsx';
@@ -33,7 +33,42 @@ function FilterTile({ id, name, custom, active, onApply }) {
   );
 }
 
-export default function FiltersPanel({ clip, media, custom, time, dispatch, onNotice }) {
+const ADJUSTMENTS = [
+  { key: 'exposure', label: 'Exposition', min: -1, max: 1 },
+  { key: 'contrast', label: 'Contraste', min: -0.5, max: 0.5 },
+  { key: 'saturation', label: 'Saturation', min: -1, max: 1 },
+  { key: 'temperature', label: 'Température', min: -1, max: 1 },
+];
+const NO_ADJUSTMENT = { exposure: 0, contrast: 0, saturation: 0, temperature: 0 };
+
+// A correction for everything below it, on the Filters track, for the whole montage.
+function AdjustmentLayer({ custom, total, dispatch, onNotice }) {
+  const [values, setValues] = useState(NO_ADJUSTMENT);
+  const unchanged = ADJUSTMENTS.every(({ key }) => values[key] === 0);
+  const add = () => {
+    const filter = adjustmentFilter(values, `Réglage ${custom.length + 1}`);
+    dispatch({ type: 'ADD_FILTER', filter });
+    dispatch({ type: 'ADD_FILTER_ITEM', filterId: filter.id, start: 0, amount: 1, duration: total > 0 ? total : undefined, fade: 0 });
+    setValues(NO_ADJUSTMENT);
+    onNotice({ kind: 'ok', text: 'Calque de réglage ajouté sur la piste Filtres : tu peux le déplacer et le raccourcir.' });
+  };
+  return (
+    <details className="adjust-layer">
+      <summary>Calque de réglage</summary>
+      {ADJUSTMENTS.map(({ key, label, min, max }) => (
+        <label className="field" key={key}>
+          {label}
+          <input type="range" min={min} max={max} step={0.05} value={values[key]} onChange={(e) => setValues({ ...values, [key]: Number(e.target.value) })} />
+        </label>
+      ))}
+      <button className="btn small primary" disabled={unchanged} onClick={add}>
+        Ajouter le calque
+      </button>
+    </details>
+  );
+}
+
+export default function FiltersPanel({ clip, media, custom, time, total = 0, dispatch, onNotice }) {
   const [cat, setCat] = useState('Tous');
   const onClip = clip?.track === 'video';
   const onItem = clip?.track === 'filter';
@@ -86,6 +121,7 @@ export default function FiltersPanel({ clip, media, custom, time, dispatch, onNo
         onChange={setCat}
       />
     <div className="fx-panel">
+      <AdjustmentLayer custom={custom} total={total} dispatch={dispatch} onNotice={onNotice} />
       <div className="fx-target">
         {onClip && (
           <>

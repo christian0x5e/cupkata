@@ -133,7 +133,7 @@ async function removeBackground({ file, isImage, start = 0, span = 0, width, hei
     '-ss', start.toFixed(3), '-t', span.toFixed(3), '-i', file,
     '-f', 'rawvideo', '-pix_fmt', 'gray', '-s', `${mw}x${mh}`, '-r', String(fps), '-i', '-',
     '-filter_complex', `[0:v]fps=${fps},format=yuva420p[v];[1:v][v]scale2ref[mk][v2];[v2][mk]alphamerge,format=yuva420p[o]`,
-    '-map', '[o]', '-map', '0:a?', '-c:v', 'libvpx-vp9', '-pix_fmt', 'yuva420p', '-crf', '30', '-b:v', '0',
+    '-map', '[o]', '-map', '0:a?', ...(height > 576 ? ['-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709'] : ['-colorspace', 'smpte170m']), '-c:v', 'libvpx-vp9', '-pix_fmt', 'yuva420p', '-crf', '30', '-b:v', '0',
     '-deadline', 'realtime', '-cpu-used', '8', '-row-mt', '1', '-auto-alt-ref', '0', '-c:a', 'libopus', '-b:a', '160k', out], { windowsHide: true });
   let writerErr = '';
   writer.stderr.on('data', (d) => (writerErr += d));

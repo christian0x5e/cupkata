@@ -193,6 +193,12 @@ select, .btn {
 .bin-audio { font-size: 26px; color: #6fcfa8; }
 .bin-dur, .bin-kind { position: absolute; bottom: 4px; font-size: 10px; padding: 1px 5px; border-radius: 4px; background: rgba(0, 0, 0, 0.65); }
 .bin-dur { right: 4px; }
+.adjust-layer { padding: 6px 10px; border-bottom: 1px solid var(--border); }
+.adjust-layer summary { cursor: pointer; font-weight: 600; padding: 2px 0; }
+.adjust-layer .field { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 6px 0; }
+.adjust-layer input { width: 120px; }
+.ramp-presets { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; }
+.ramp-presets .btn { padding: 0 6px; font-size: 12px; }
 .bin-proxy { position: absolute; top: 4px; right: 4px; font-size: 10px; padding: 1px 5px; border-radius: 4px; background: rgba(0, 0, 0, 0.65); color: #fff; }
 .bin-kind { left: 4px; }
 .bin-name { margin-top: 4px; font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -562,7 +568,8 @@ select, .btn {
 .ratio-hint { color: var(--muted); font-size: 11px; }
 
 /* AI tools */
-.ai-btn { width: 100%; }
+.ai-btn { width: 100%; flex-shrink: 0; white-space: nowrap; }
+.ai-row input[type="range"] { flex: 1; min-width: 0; }
 .ai-row { display: grid; grid-template-columns: 1fr auto; gap: 6px; }
 .ai-row .ai-btn { width: auto; }
 .translate-row { display: flex; align-items: center; gap: 8px; }

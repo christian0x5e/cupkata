@@ -1,8 +1,8 @@
 import { flushSync } from 'react-dom';
 import SPEC from '../shared/control-commands.json';
 import EFFECT_IDS from '../shared/effects.json';
-import { BACKGROUNDS, laneOf, overlaps, TRANSITIONS } from './project.js';
-import { FILTER_CATEGORIES, PRESETS } from './filters.js';
+import { SPEED_RAMPS, totalDuration, BACKGROUNDS, laneOf, overlaps, TRANSITIONS } from './project.js';
+import { adjustmentFilter, FILTER_CATEGORIES, PRESETS } from './filters.js';
 import { CATEGORIES, EFFECTS } from './effects.js';
 import { DEFAULT_TEXT_STYLE, FONTS, TEXT_ANIMS_IN, TEXT_ANIMS_LOOP, TEXT_ANIMS_OUT, TEXT_PRESETS } from './text.js';
 import { RATIOS } from './ratio.js';
@@ -561,6 +561,31 @@ export function createCommands(app, dispatchRaw) {
       if (laneOf(clip) !== 0) fail('invalid', 'Le recadrage concerne la piste principale.');
       return runTool(() => app.current.reframeClip(clip));
     },
+    clip_stabilize: (args) => {
+      const clip = clipOf(app.current, args.clip_id, 'video');
+      if (app.current.state.media.find((m) => m.id === clip.mediaId)?.type !== 'video') fail('invalid', 'La stabilisation concerne les vidéos.');
+      return runTool(() => app.current.stabilizeClip(clip));
+    },
+    clip_green_screen: (args) => {
+      const clip = clipOf(app.current, args.clip_id, 'video');
+      if (args.color && !HEX.test(args.color)) fail('bad_args', 'color attend une couleur #rrggbb.');
+      return runTool(() => app.current.chromaClip(clip, { tolerance: args.tolerance, color: args.color }));
+    },
+    clip_speed_ramp: (args) => {
+      const clip = clipOf(app.current, args.clip_id, 'video', 'audio');
+      const ramp = SPEED_RAMPS.find((r) => r.id === args.preset);
+      if (!ramp) fail('bad_args', `Rampe inconnue : ${args.preset}. Choix : ${SPEED_RAMPS.map((r) => r.id).join(', ')}.`);
+      return clipsChange({ type: 'SPEED_RAMP', id: clip.id, speeds: ramp.speeds });
+    },
+    adjustment_add: (args) => {
+      const a = app.current;
+      const values = { exposure: args.exposure, contrast: args.contrast, saturation: args.saturation, temperature: args.temperature };
+      const filter = adjustmentFilter(values, `Réglage ${a.state.filters.length + 1}`);
+      dispatch({ type: 'ADD_FILTER', filter });
+      dispatch({ type: 'ADD_FILTER_ITEM', filterId: filter.id, start: args.start ?? 0, amount: 1, duration: args.duration ?? (totalDuration(a.state.clips) || undefined), fade: 0 });
+      return { clip: newest() };
+    },
+    short_format: () => runTool(() => app.current.shortFormat()),
     clip_clean_voice: (args) => {
       const clip = clipOf(app.current, args.clip_id, 'video', 'audio');
       if (!app.current.state.media.find((m) => m.id === clip.mediaId)?.hasAudio) fail('invalid', 'Ce clip n’a pas de son.');

@@ -52,7 +52,7 @@ function syncElement(el, srcTime, playing, rate = 1) {
   }
 }
 
-export default function Preview({proxies, 
+export default function Preview({proxies, onShort, 
   media, clips, filters, voice, time, playing, muted, zone, selectedId, dispatch, onTime, onEnded, onTogglePlay,
   onStep, loop, onToggleLoop, onSnapshot, ratio = DEFAULT_RATIO, onRatio, captureRef,
 }) {
@@ -527,6 +527,16 @@ export default function Preview({proxies,
                     <span className="ratio-hint">{r.hint}</span>
                   </button>
                 ))}
+                <button
+                  onClick={() => {
+                    onShort?.();
+                    setRatioOpen(false);
+                  }}
+                  title="Passe en 9:16 et recadre chaque clip de la piste principale sur son sujet"
+                >
+                  <span className="ratio-id">Short</span>
+                  <span className="ratio-hint">9:16 et recadrage auto</span>
+                </button>
               </div>
             )}
           </div>

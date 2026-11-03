@@ -254,6 +254,9 @@ function sanitize(raw) {
         // A clip whose background was removed remembers the original source, to put it back.
         cutout:
           c.cutout && ids.has(c.cutout.mediaId) ? { mediaId: c.cutout.mediaId, in: Math.max(0, finite(c.cutout.in)) } : null,
+        // The same for a clip that plays a stabilized copy.
+        stable:
+          c.stable && ids.has(c.stable.mediaId) ? { mediaId: c.stable.mediaId, in: Math.max(0, finite(c.stable.in)) } : null,
         // The same for a clip that plays a copy with its voice cleaned.
         cleaned:
           c.cleaned && ids.has(c.cleaned.mediaId) ? { mediaId: c.cleaned.mediaId, in: Math.max(0, finite(c.cleaned.in)) } : null,

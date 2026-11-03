@@ -1,6 +1,7 @@
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const os = require('os');
 const { execFile, spawn } = require('child_process');
 
 const { effectFilter, mixer, saturate } = require('./effects.cjs');
@@ -848,4 +849,74 @@ async function cleanVoiceFile(file, out, isVideo) {
   });
 }
 
-module.exports = { cleanVoiceFile, ffmpegPath, ffprobePath, probe, computePeaks, monoFiles, buildExportArgs, planChunks, gpuJobs, ALL_EXT, VIDEO_EXT, IMAGE_EXT, AUDIO_EXT, MIME, ext };
+function runIn(cwd, args) {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(ffmpegPath, args, { windowsHide: true, cwd });
+    let tail = '';
+    proc.stderr.on('data', (d) => {
+      tail = (tail + d).slice(-2000);
+    });
+    proc.on('error', reject);
+    proc.on('close', (code) => (code === 0 ? resolve() : reject(new Error(tail.trim().split('\n').pop() || 'FFmpeg a échoué'))));
+  });
+}
+
+// Stabilization in two passes: first the camera's movements are measured, then the picture is moved
+// the other way and zoomed just enough to hide the edges. The result is a copy with the same timing,
+// so the preview and the export both play the very same steady picture. The motion file is named
+// relative to its folder because filter options can't hold a Windows drive letter, and written as
+// text because this FFmpeg can't read back its own binary format on Windows.
+async function stabilizeFile(file, out, encoder, encoderArgs) {
+  const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'cupkata-stable-'));
+  try {
+    await runIn(dir, ['-y', '-v', 'error', '-i', file, '-map', '0:v:0', '-vf', 'vidstabdetect=shakiness=6:accuracy=12:fileformat=ascii:result=motion.trf', '-f', 'null', '-']);
+    await runIn(dir, [
+      '-y', '-v', 'error', '-i', file, '-map', '0:v:0', '-map', '0:a:0?',
+      '-vf', 'vidstabtransform=input=motion.trf:smoothing=20:optzoom=1:interpol=bicubic,format=yuv420p',
+      '-fps_mode', 'passthrough', '-c:v', encoder, ...encoderArgs, '-c:a', 'aac', '-b:a', '192k', out,
+    ]);
+  } finally {
+    fs.promises.rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+// The screen's colour, read at the top corners of the picture, where a person rarely stands.
+async function keyColorOf(file, time) {
+  const raw = await runBuffer(ffmpegPath, ['-v', 'error', '-ss', time.toFixed(3), '-i', file, '-frames:v', '1', '-vf', 'scale=32:32:flags=area,format=rgb24', '-f', 'rawvideo', '-']);
+  const at = (x, y, c) => raw[(y * 32 + x) * 3 + c];
+  const hex = [0, 1, 2].map((c) => Math.round((at(1, 1, c) + at(30, 1, c)) / 2).toString(16).padStart(2, '0')).join('');
+  return `#${hex}`;
+}
+
+const SCALE_MATRIX = { bt709: 'bt709', bt470bg: 'bt470', smpte170m: 'smpte170m', bt2020nc: 'bt2020', bt2020c: 'bt2020', smpte240m: 'smpte240m', fcc: 'fcc' };
+const matrixOfSource = ({ isImage, colorSpace, height }) => {
+  if (isImage) return 'bt601';
+  if (colorSpace) return SCALE_MATRIX[colorSpace] || 'auto';
+  return height > 576 ? 'bt709' : 'bt601';
+};
+
+function keyChain(color, tolerance, matrix) {
+  const value = parseInt(color.slice(1), 16);
+  const [r, g, b] = [value >> 16, (value >> 8) & 255, value & 255];
+  // The screen's reflection on hair and skin is taken away too.
+  const spill = g >= r && g >= b ? 'despill=type=green:mix=0.5:expand=0,' : b >= r ? 'despill=type=blue:mix=0.5:expand=0,' : '';
+  return `format=yuva444p,chromakey=0x${color.slice(1)}:${tolerance.toFixed(3)}:0.05,scale=in_color_matrix=${matrix},format=gbrap,${spill}`;
+}
+
+// The clip's picture without its coloured screen: a copy with transparency, like the AI cut-out.
+async function chromaKeyFile({ file, isImage, start = 0, span = 0, color, tolerance = 0.15, colorSpace = null, height = 1080 }, out) {
+  const key = color || (await keyColorOf(file, start));
+  const chain = keyChain(key, Math.min(0.6, Math.max(0.02, tolerance)), matrixOfSource({ isImage, colorSpace, height }));
+  if (isImage) {
+    await runIn(undefined, ['-y', '-v', 'error', '-i', file, '-frames:v', '1', '-vf', `${chain}format=rgba`, out]);
+    return key;
+  }
+  await runIn(undefined, [
+    '-y', '-v', 'error', '-ss', start.toFixed(3), '-t', span.toFixed(3), '-i', file, '-map', '0:v:0', '-map', '0:a:0?',
+    '-vf', `${chain}scale=out_color_matrix=bt709:out_range=tv,format=yuva420p`, ...COLOR_TAGS, '-c:v', 'libvpx-vp9', '-pix_fmt', 'yuva420p', '-crf', '24', '-b:v', '0',
+    '-deadline', 'realtime', '-cpu-used', '6', '-row-mt', '1', '-auto-alt-ref', '0', '-c:a', 'libopus', '-b:a', '160k', out,
+  ]);
+  return key;
+}
+
+module.exports = { stabilizeFile, chromaKeyFile, keyColorOf, cleanVoiceFile, ffmpegPath, ffprobePath, probe, computePeaks, monoFiles, buildExportArgs, planChunks, gpuJobs, ALL_EXT, VIDEO_EXT, IMAGE_EXT, AUDIO_EXT, MIME, ext };

@@ -105,6 +105,7 @@ Pour animer un clip, pose des images clés avec `clip_keyframe`, en temps de la 
 - **Montage par le texte** : `transcript_generate`, puis `transcript_get` donne les mots et `transcript_cut` coupe les mots `first` à `last`. Les indices changent après chaque coupe : relis `transcript_get`.
 - **Rythme** : `clip_beats` sur un clip qui a du son. `fit` termine chaque clip de la piste principale sur un temps fort, `split` coupe, `markers` marque.
 - **Recadrage** : `clip_reframe` suit la personne à l'écran sur un clip vidéo de la piste principale. Change d'abord le format avec `set_settings`.
+- **Image** : `clip_stabilize` corrige les tremblements, `clip_green_screen` retire un fond uni, `clip_speed_ramp` crée une rampe de vitesse, `adjustment_add` ajoute un calque de réglage.
 - **Son** : `clip_clean_voice` fait jouer au clip une copie nettoyée de son fichier. Un second appel remet l'original.
 - **Sous-titres mot par mot** : `captions_word_by_word`, après ou avant `subtitles_generate`.
 - **Formes et émojis** : `sticker_add`. Le clip créé se règle ensuite comme un texte avec `clip_update`.
@@ -135,6 +136,19 @@ Pour animer un clip, pose des images clés avec `clip_keyframe`, en temps de la 
 {"command":"export_start","args":{"path":"C:\\Videos\\vacances.mp4"}}
 ```
 
+### Recette : monter un short depuis une longue vidéo
+
+Quand l'utilisateur demande un short, décide toi-même du contenu à partir de ce qui est dit :
+
+1. Importe la vidéo avec `media_import`, puis `clip_add`.
+2. `transcript_generate`, attends avec `wait_idle`, puis lis le texte avec `transcript_get`.
+3. Choisis le passage le plus fort, 60 secondes au plus : une accroche nette dès la première phrase et une fin qui se tient. Si l'utilisateur a donné un sujet ou une durée, respecte-les.
+4. Retire le reste avec `transcript_cut`, puis les silences avec `clip_cut_silences`.
+5. `short_format` met le montage en 9:16 et recadre sur le sujet.
+6. Ajoute les sous-titres avec `captions_word_by_word` si l'utilisateur les veut, puis `clip_clean_voice` si le son est bruyant.
+7. Vérifie avec `capture_frame` au début, au milieu et à la fin, en regardant surtout le cadrage et les sous-titres.
+8. Annonce le passage retenu et sa durée à l'utilisateur, puis lance `export_start` s'il le veut.
+
 ## Erreurs
 
 | Code | Que faire |
@@ -154,7 +168,7 @@ Pour animer un clip, pose des images clés avec `clip_keyframe`, en temps de la 
 
 - **Exécution** : les commandes passent une à la fois, dans l'ordre d'arrivée. Attends chaque réponse avant d'envoyer la suivante.
 - **Commandes longues** : `clip_cutout`, `clip_cut_silences`, `text_speak`, `texts_translate`, `subtitles_generate` et `music_generate` ne répondent qu'à la fin, parfois après plusieurs minutes, car un modèle peut être téléchargé la première fois. Prévois un long délai d'attente. `get_state` et `wait_idle` restent disponibles pendant ce temps.
-- **Longues aussi** : `transcript_generate`, `clip_beats`, `clip_reframe` et `clip_clean_voice`.
+- **Longues aussi** : `transcript_generate`, `clip_beats`, `clip_reframe`, `clip_clean_voice`, `clip_stabilize`, `clip_green_screen` et `short_format`.
 - **Annulation** : `undo` et `redo` couvrent les clips, les marqueurs et les filtres importés, pas les réglages du projet ni les imports de médias. `media_remove` n'est pas annulable.
 - **Fidélité** : l'aperçu et l'export utilisent les mêmes calculs. Une image de `/v1/frame` représente donc le rendu final, en 720p sur le petit côté.
 - **Fenêtre** : ne la laisse pas réduite pendant une capture d'image, car l'aperçu peut alors cesser de se dessiner.

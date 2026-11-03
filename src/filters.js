@@ -3,6 +3,12 @@ import { buildLut, FILTER_CATEGORIES, LUT_SIZE, PRESETS } from '../shared/filter
 export { FILTER_CATEGORIES, PRESETS };
 export const DEFAULT_FILTER_AMOUNT = 0.8;
 
+// An adjustment layer: its settings become a table of its own, which every filter path already knows.
+export function adjustmentFilter({ exposure = 0, contrast = 0, saturation = 0, temperature = 0 }, name) {
+  const data = buildLut({ exp: exposure, con: contrast, sat: saturation, temp: temperature });
+  return { id: `custom:${crypto.randomUUID()}`, name, size: LUT_SIZE, data };
+}
+
 const cache = new Map();
 
 // Looks a filter up among the presets and the project's imported filters; tables are built once.
