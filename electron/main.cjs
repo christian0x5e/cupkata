@@ -17,6 +17,8 @@ const { createControl } = require('./control.cjs');
 const { findBeats } = require('./beats.cjs');
 const { ensureSounds } = require('./sfx.cjs');
 const { keepBackup, isBackupDue } = require('./backups.cjs');
+const { detectEncoder, intermediateArgs, proxyArgs, withFallback } = require('./encoders.cjs');
+const { createProxies } = require('./proxies.cjs');
 
 // Lets a test instance run with its own data folder, so it never touches the user's autosave.
 if (process.env.CUPKATA_USER_DATA) app.setPath('userData', process.env.CUPKATA_USER_DATA);
@@ -280,6 +282,26 @@ ipcMain.handle('media:import', async (event) => {
 });
 
 const peaksCache = new Map();
+const proxies = createProxies({
+  dir: path.join(app.getPath('userData'), 'proxies'),
+  ffmpegPath,
+  getEncoder: () => detectEncoder(ffmpegPath),
+  encoderArgs: proxyArgs,
+  isBusy: () => !!exportProc,
+  onReady: (file, proxy) => {
+    allowed.add(proxy);
+    mainWindow?.webContents.send('proxy:update', { path: file, status: 'ready', file: proxy });
+  },
+  onFailed: (file) => mainWindow?.webContents.send('proxy:update', { path: file, status: 'none' }),
+});
+
+ipcMain.handle('media:proxy', async (_e, m) => {
+  if (typeof m?.path !== 'string' || !isAllowed(m.path)) return { status: 'none' };
+  const answer = await proxies.request(m).catch(() => ({ status: 'none' }));
+  if (answer.file) allowed.add(answer.file);
+  return answer;
+});
+
 ipcMain.handle('media:peaks', (_e, filePath) => {
   if (!isAllowed(filePath)) throw new Error('Média introuvable');
   if (!peaksCache.has(filePath)) {
@@ -670,9 +692,10 @@ ipcMain.handle('gpu:plan', (_e, project, token) => {
   });
 });
 
-ipcMain.handle('gpu:start', (_e, jobId) => {
+ipcMain.handle('gpu:start', async (_e, jobId) => {
   const job = gpuState.get(jobId);
   if (!job || job.decoder) throw new Error('Traitement GPU inconnu');
+  const encoder = await detectEncoder(ffmpegPath);
   Object.assign(job, { chunks: [], buffered: 0, waiters: [], ended: false, errors: '' });
   job.decoder = spawn(
     ffmpegPath,
@@ -683,7 +706,7 @@ ipcMain.handle('gpu:start', (_e, jobId) => {
     ffmpegPath,
     ['-v', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${job.width}x${job.height}`, '-r', String(job.fps), '-i', '-',
       // A transparent picture needs a codec that keeps its alpha channel.
-      ...(job.alpha ? ['-c:v', 'ffv1', '-pix_fmt', 'bgra'] : ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '10', '-pix_fmt', 'yuv420p']), job.out],
+      ...(job.alpha ? ['-c:v', 'ffv1', '-pix_fmt', 'bgra'] : ['-c:v', encoder, ...intermediateArgs(encoder), '-pix_fmt', 'yuv420p']), job.out],
     { windowsHide: true },
   );
   job.decoder.stdout.on('data', (chunk) => {
@@ -872,8 +895,10 @@ async function renderChunks(event, project, token) {
   return chunks;
 }
 
-const runFfmpeg = async (event, project, outPath, prerendered, opts = {}) =>
-  encodeProject(event, project, outPath, prerendered, { ...opts, mono: await monoFiles(project, isAllowed) });
+const runFfmpeg = async (event, project, outPath, prerendered, opts = {}) => {
+  const base = { ...opts, mono: await monoFiles(project, isAllowed) };
+  return withFallback(await detectEncoder(ffmpegPath), (encoder) => encodeProject(event, project, outPath, prerendered, { ...base, encoder }));
+};
 
 const encodeProject = (event, project, outPath, prerendered, opts) => new Promise((resolve, reject) => {
   let built;
@@ -1035,4 +1060,7 @@ app.on('window-all-closed', () => {
 });
 
 // A refused second instance must not remove the discovery file of the running one.
-app.on('will-quit', () => isPrimary && control.cleanup());
+app.on('will-quit', () => {
+  proxies.stop();
+  if (isPrimary) control.cleanup();
+});

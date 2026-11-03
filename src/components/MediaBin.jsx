@@ -25,7 +25,7 @@ const fold = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
 // Thumbnail that previews on hover: a video follows the mouse across it (left = start, right = end),
 // a sound plays from the start until the mouse leaves.
-function BinThumb({ m }) {
+function BinThumb({ m, proxy }) {
   const [hover, setHover] = useState(null);
   const videoRef = useRef(null);
   const audioRef = useRef(null);
@@ -64,9 +64,10 @@ function BinThumb({ m }) {
         <span className={`bin-audio ${hover != null ? 'playing' : ''}`}>♪</span>
       )}
       {hover != null && m.type === 'video' && (
-        <video ref={videoRef} className="bin-scrub" src={api.mediaUrl(m.path)} muted preload="auto" draggable={false} />
+        <video ref={videoRef} className="bin-scrub" src={api.mediaUrl(proxy?.file || m.path)} muted preload="auto" draggable={false} />
       )}
       {hover != null && canPreview && <span className="bin-scrub-bar" style={{ left: `${hover * 100}%` }} />}
+      {proxy?.status === 'pending' && <span className="bin-proxy" title="Création d'une copie légère pour un aperçu fluide. L'export utilise toujours l'original.">Aperçu…</span>}
       {m.type !== 'image' && (
         <span className="bin-dur">{hover != null && m.type === 'video' ? formatShort(hover * m.duration) : formatShort(m.duration)}</span>
       )}
@@ -76,7 +77,7 @@ function BinThumb({ m }) {
 }
 
 // audio: the Audio tab (sounds only, shown as a list, with the voice-over).
-export default function MediaBin({ media, clips = [], time = 0, dispatch, onNotice, audio = false, onVoiceover, link = true }) {
+export default function MediaBin({ proxies = {}, media, clips = [], time = 0, dispatch, onNotice, audio = false, onVoiceover, link = true }) {
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState([]);
   const [dragOver, setDragOver] = useState(false);
@@ -323,7 +324,7 @@ export default function MediaBin({ media, clips = [], time = 0, dispatch, onNoti
                 onDoubleClick={() => !m.missing && dispatch({ type: 'ADD_CLIP', mediaId: m.id })}
               >
                 <div className="bin-thumb-wrap">
-                  <BinThumb m={m} />
+                  <BinThumb m={m} proxy={proxies[m.path]} />
                   {picked.includes(m.id) && <span className="bin-order">{picked.indexOf(m.id) + 1}</span>}
                   {uses.get(m.id) > 0 && (
                     <span className="bin-used" title={`Utilisé ${uses.get(m.id)} fois dans la timeline`}>

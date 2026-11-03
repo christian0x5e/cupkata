@@ -39,6 +39,7 @@ beforeAll(() => {
   const hd = ['-f', 'lavfi', '-i', rgbSource(1280, 720), '-vf', 'scale=out_color_matrix=bt709:out_range=tv,format=yuv420p', ...X264];
   ffmpeg(...hd, '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv', at('hd-tagged.mp4'));
   ffmpeg(...hd, at('hd-untagged.mp4'));
+  ffmpeg('-f', 'lavfi', '-i', rgbSource(1280, 720), '-vf', 'scale=out_color_matrix=bt709:out_range=pc,format=yuvj420p', ...X264, '-colorspace', 'bt709', '-color_range', 'pc', at('hd-full.mp4'));
   ffmpeg('-f', 'lavfi', '-i', rgbSource(640, 480), '-vf', 'scale=out_color_matrix=bt601:out_range=tv,format=yuv420p', ...X264, at('sd-untagged.mp4'));
 });
 afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
@@ -47,6 +48,7 @@ describe('couleurs à l’export', () => {
   it('une image garde sa couleur', () => expectColor(run(project('image.png', 'image'), 'o1.mp4')));
   it('une vidéo HD BT.709 garde sa couleur', () => expectColor(run(project('hd-tagged.mp4', 'video', { colorSpace: 'bt709' }), 'o2.mp4')));
   it('une vidéo HD sans balise garde sa couleur', () => expectColor(run(project('hd-untagged.mp4', 'video'), 'o3.mp4')));
+  it('une vidéo en plage complète (téléphone) garde sa couleur', () => expectColor(run(project('hd-full.mp4', 'video', { colorSpace: 'bt709' }), 'o9.mp4')));
   it('une vidéo SD sans balise garde sa couleur', () => expectColor(run(project('sd-untagged.mp4', 'video', { width: 640, height: 480 }), 'o4.mp4')));
 
   it('un long montage passé par des blocs garde sa couleur', () => {

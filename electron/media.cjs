@@ -5,6 +5,7 @@ const { execFile, spawn } = require('child_process');
 
 const { effectFilter, mixer, saturate } = require('./effects.cjs');
 const DUCK = require('../shared/effects.json').duck;
+const { finalArgs, intermediateArgs } = require('./encoders.cjs');
 const GPU_IDS = require('../shared/effects.json').gpu;
 const BACKGROUND = require('../shared/effects.json').background;
 
@@ -263,14 +264,25 @@ function reframeCrop(points, W, H, src) {
 // Inside the export every picture uses BT.601 numbers: that is what FFmpeg applies by itself when
 // images, overlays and GPU frames go from RGB to YUV. Only video sources in another space need
 // converting on the way in, and the finished picture is converted once, on the way out.
+// The colorspace filter only changes the matrix, directly and on all processor cores: on 4K it is
+// 30 times faster than going through the scaler, and it needs no colour settings from the source.
+const matrixFilter = (input, output, inputRange = '') =>
+  `colorspace=ispace=${input}:space=${output}:range=tv${inputRange}:fast=1:iprimaries=bt709:primaries=bt709:itrc=bt709:trc=bt709`;
+const CONVERTIBLE = ['bt709', 'fcc', 'smpte240m', 'bt2020nc', 'bt2020c', 'ycgco'];
+
 function toWorkingColor(m) {
   if (m.type !== 'video') return '';
-  if (m.colorSpace === 'smpte170m' || m.colorSpace === 'bt470bg') return '';
+  if (m.colorSpace === 'smpte170m' || m.colorSpace === 'bt470bg' || m.colorSpace === 'gbr') return '';
   // An untagged file is read as players read it: BT.709 in HD, BT.601 in standard definition.
   if (!m.colorSpace && m.height <= 576) return '';
-  return `scale=in_color_matrix=${m.colorSpace ? 'auto' : 'bt709'}:out_color_matrix=bt601:out_range=tv:flags=accurate_rnd+full_chroma_int,setparams=colorspace=smpte170m,`;
+  const input = m.colorSpace || 'bt709';
+  // The filter has no transparency: a video with alpha goes through the slower scaler.
+  if (m.alpha === true || !CONVERTIBLE.includes(input)) {
+    return `scale=in_color_matrix=${m.colorSpace ? 'auto' : 'bt709'}:out_color_matrix=bt601:out_range=tv:flags=accurate_rnd+full_chroma_int,setparams=colorspace=smpte170m,`;
+  }
+  return `${matrixFilter(input, 'smpte170m')},`;
 }
-const TO_DELIVERY_COLOR = 'scale=in_color_matrix=bt601:out_color_matrix=bt709:in_range=tv:out_range=tv:flags=accurate_rnd+full_chroma_int,format=yuv420p';
+const TO_DELIVERY_COLOR = `${matrixFilter('smpte170m', 'bt709', ':irange=tv')},format=yuv420p`;
 const COLOR_TAGS = ['-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv'];
 
 function backgroundChain(c, k, W, H, fps, alpha = false, src = null) {
@@ -531,7 +543,7 @@ const graphPath = (p) => (p.includes("'") ? null : p.replace(/\\/g, '/').replace
 function buildExportArgs(project, outPath, isAllowed = () => true, prerendered = new Map(), opts = {}) {
   const { W, H, fps, total, segs, audioClips, overlayClips, getMedia, regrid } = planExport(project, isAllowed);
   // range: render just these segments (one block). chunks: use the rendered blocks instead of the segments.
-  const { videoOnly = false, baseVideo = null, fxRanges = [], range = null, chunks = null, mono = new Set() } = opts;
+  const { videoOnly = false, baseVideo = null, fxRanges = [], range = null, chunks = null, mono = new Set(), encoder = 'libx264' } = opts;
   const inputs = [];
   const filters = [];
   let idx = 0;
@@ -632,7 +644,7 @@ function buildExportArgs(project, outPath, isAllowed = () => true, prerendered =
       '-y', '-hide_banner', ...inputs,
       '-filter_complex', filters.join(';'),
       '-map', videoOut, '-map', '[acat]',
-      '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '10', '-pix_fmt', 'yuv420p', '-c:a', 'pcm_s16le',
+      '-c:v', encoder, ...intermediateArgs(encoder), '-pix_fmt', 'yuv420p', '-c:a', 'pcm_s16le',
       outPath,
     ];
     return { args, total: range.L };
@@ -705,7 +717,7 @@ function buildExportArgs(project, outPath, isAllowed = () => true, prerendered =
       '-y', '-hide_banner', ...inputs,
       '-filter_complex', filters.join(';'),
       '-map', videoOut,
-      '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '10', '-pix_fmt', 'yuv420p',
+      '-c:v', encoder, ...intermediateArgs(encoder), '-pix_fmt', 'yuv420p',
       outPath,
     ];
     return { args, total };
@@ -748,9 +760,6 @@ function buildExportArgs(project, outPath, isAllowed = () => true, prerendered =
   // A preset targets a bitrate; a range keeps just that part of the finished picture and sound.
   const videoKbps = clampNum(project.encode?.video, 500, 100000, 0);
   const audioKbps = clampNum(project.encode?.audio, 64, 320, 192);
-  const quality = videoKbps
-    ? ['-b:v', `${videoKbps}k`, '-maxrate', `${Math.round(videoKbps * 1.5)}k`, '-bufsize', `${videoKbps * 2}k`]
-    : ['-crf', '20'];
   const from = clampNum(project.range?.start, 0, total, 0);
   const length = clampNum(project.range?.duration, 0, total - from, 0);
   const part = length > 0 ? ['-ss', n(from), '-t', n(length)] : [];
@@ -759,7 +768,7 @@ function buildExportArgs(project, outPath, isAllowed = () => true, prerendered =
     '-filter_complex', filters.join(';'),
     '-map', videoOut, '-map', audioOut,
     ...part,
-    '-c:v', 'libx264', '-preset', 'veryfast', ...quality, '-pix_fmt', 'yuv420p', ...COLOR_TAGS,
+    '-c:v', encoder, ...finalArgs(encoder, videoKbps), '-pix_fmt', 'yuv420p', ...COLOR_TAGS,
     '-c:a', 'aac', '-b:a', `${audioKbps}k`, '-movflags', '+faststart',
     outPath,
   ];

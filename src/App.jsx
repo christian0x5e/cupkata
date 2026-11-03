@@ -215,6 +215,20 @@ export default function App() {
   const [loop, setLoop] = useState(false);
   const [aiJob, setAiJob] = useState(null);
   useEffect(() => api.onAiProgress((p) => setAiJob((j) => (j ? { ...j, ...p } : j))), []);
+
+  // Big videos get a light copy for the preview, made in the background.
+  const [proxies, setProxies] = useState({});
+  useEffect(() => api.onProxyUpdate(({ path, status, file }) => setProxies((all) => ({ ...all, [path]: { status, file } }))), []);
+  useEffect(() => {
+    for (const { id, path, type, width, height, alpha, missing, colorSpace } of state.media) {
+      if (type !== 'video' || missing || proxies[path]) continue;
+      setProxies((all) => ({ ...all, [path]: { status: 'pending' } }));
+      api.requestProxy({ id, path, type, width, height, alpha, missing, colorSpace }).then(
+        ({ status, file }) => setProxies((all) => (all[path]?.status === 'ready' ? all : { ...all, [path]: { status, file } })),
+        () => {},
+      );
+    }
+  }, [state.media]);
   const [layout, setLayout] = useState(loadLayout);
   const resize = (key) => (v) => setLayout((l) => ({ ...l, [key]: v }));
   const resetSize = (key) => () => setLayout((l) => ({ ...l, [key]: DEFAULT_LAYOUT[key] }));
@@ -1112,7 +1126,7 @@ export default function App() {
               </button>
             ))}
           </nav>
-          {leftTab === 'media' && <MediaBin media={state.media} clips={state.clips} time={time} dispatch={dispatch} onNotice={setNotice} link={link} />}
+          {leftTab === 'media' && <MediaBin proxies={proxies} media={state.media} clips={state.clips} time={time} dispatch={dispatch} onNotice={setNotice} link={link} />}
           {leftTab === 'audio' && (
             <MediaBin
               key="audio"
@@ -1174,6 +1188,7 @@ export default function App() {
           title="Tire pour élargir ou réduire le panneau Médias (double-clic : taille d'origine)"
         />
         <Preview
+          proxies={proxies}
           media={state.media}
           clips={state.clips}
           filters={state.filters}

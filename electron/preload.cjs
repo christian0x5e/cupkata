@@ -53,6 +53,12 @@ contextBridge.exposeInMainWorld('cupkata', {
   saveProject: (data, filePath) => ipcRenderer.invoke('project:save', data, filePath),
   openProject: () => ipcRenderer.invoke('project:open'),
   openBackup: () => ipcRenderer.invoke('project:open-backup'),
+  requestProxy: (m) => ipcRenderer.invoke('media:proxy', m),
+  onProxyUpdate: (cb) => {
+    const handler = (_e, update) => cb(update);
+    ipcRenderer.on('proxy:update', handler);
+    return () => ipcRenderer.removeListener('proxy:update', handler);
+  },
   logError: (text) => ipcRenderer.invoke('app:log-error', text),
   restartInterface: () => ipcRenderer.invoke('app:restart-interface'),
   autosave: (payload) => ipcRenderer.invoke('project:autosave', payload),

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { inWindow, visibleWindow } from '../sync.js';
 import { clipAudio, clipSpeed, MAX_VOLUME, end, freeLane, insertMain, laneCount, laneOf, overlaps, sitsOn, totalDuration, videoTransitions, MEDIA_LIST_MIME, MEDIA_MIME, OVERLAY_TRANSFORM, selectionOf, STACKED, TRANSITIONS } from '../project.js';
 import { formatShort, formatTime } from '../format.js';
 import { clipEffect, EFFECTS } from '../effects.js';
@@ -39,6 +40,23 @@ export default function Timeline({ state, dispatch, time, playing, onSeek, pps, 
   const mediaById = useMemo(() => Object.fromEntries(media.map((m) => [m.id, m])), [media]);
   const contentRef = useRef(null);
   const scrollRef = useRef(null);
+  // Only the clips near the visible part exist on the page, so long montages stay fluid.
+  const [view, setView] = useState({ from: -Infinity, to: Infinity });
+  useEffect(() => {
+    const sc = scrollRef.current;
+    const update = () => {
+      const next = visibleWindow(sc.scrollLeft, sc.clientWidth);
+      setView((v) => (v.from === next.from && v.to === next.to ? v : next));
+    };
+    update();
+    sc.addEventListener('scroll', update, { passive: true });
+    const observer = new ResizeObserver(update);
+    observer.observe(sc);
+    return () => {
+      sc.removeEventListener('scroll', update);
+      observer.disconnect();
+    };
+  }, []);
   const stateRef = useRef(state);
   stateRef.current = state;
 
@@ -942,7 +960,7 @@ export default function Timeline({ state, dispatch, time, playing, onSeek, pps, 
                     </div>
                   ))}
                 {clips
-                  .filter((c) => c.track === track.id && laneOf(c) === track.lane)
+                  .filter((c) => c.track === track.id && laneOf(c) === track.lane && (chosen.has(c.id) || inWindow(c, pps, view)))
                   .map((c) => {
                     if (c.track === 'filter') {
                       const name = filterInfo(c.filter?.id, state.filters)?.name || 'Filtre';

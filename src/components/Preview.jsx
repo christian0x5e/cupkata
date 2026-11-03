@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { SEEK_ABOVE, correctedRate } from '../sync.js';
 import { clipBackground, clipColor, clipGain, clipSpeed, clipTransform, sourceTime, end, isOverlay, laneOf, overlayBox, totalDuration, videoTransitions } from '../project.js';
 import OverlayBox, { hitTest, startTransformDrag } from './OverlayBox.jsx';
 import VuMeter from './VuMeter.jsx';
@@ -38,17 +39,20 @@ let H = 720;
 
 // rate: the clip speed (the browser keeps the pitch of the voice while it speeds up or slows down).
 function syncElement(el, srcTime, playing, rate = 1) {
-  if (el.playbackRate !== rate) el.playbackRate = rate;
   if (playing) {
-    if (Math.abs(el.currentTime - srcTime) > 0.3) el.currentTime = srcTime;
+    const drift = el.currentTime - srcTime;
+    if (Math.abs(drift) > SEEK_ABOVE) el.currentTime = srcTime;
+    const wanted = correctedRate(drift, rate);
+    if (el.playbackRate !== wanted) el.playbackRate = wanted;
     if (el.paused) el.play().catch(() => {});
   } else {
+    if (el.playbackRate !== rate) el.playbackRate = rate;
     if (!el.paused) el.pause();
     if (!el.seeking && Math.abs(el.currentTime - srcTime) > 0.03) el.currentTime = srcTime;
   }
 }
 
-export default function Preview({
+export default function Preview({proxies, 
   media, clips, filters, voice, time, playing, muted, zone, selectedId, dispatch, onTime, onEnded, onTogglePlay,
   onStep, loop, onToggleLoop, onSnapshot, ratio = DEFAULT_RATIO, onRatio, captureRef,
 }) {
@@ -72,7 +76,7 @@ export default function Preview({
   const gains = useRef(new Map());
   const audioCtx = useRef(null);
   const props = useRef(null);
-  props.current = { media, clips, filters, voice, time, playing, muted, zone, onTime, onEnded };
+  props.current = { proxies, media, clips, filters, voice, time, playing, muted, zone, onTime, onEnded };
   const clock = useRef({ t: 0, wall: 0 });
   const lastEmitted = useRef(0);
   const bus = useRef(null);
@@ -124,6 +128,8 @@ export default function Preview({
     const ctx = canvasRef.current.getContext('2d');
     let raf;
 
+    const fileOf = (m) => (m.type === 'video' && props.current.proxies?.[m.path]?.file) || m.path;
+
     const element = (key, m, kind) => {
       let el = pool.current.get(key);
       if (!el) {
@@ -135,8 +141,13 @@ export default function Preview({
           mixBus().ctx.createMediaElementSource(el).connect(gain).connect(mixBus().input);
           gains.current.set(key, gain);
         }
-        el.src = window.cupkata.mediaUrl(m.path);
+        el.src = window.cupkata.mediaUrl(fileOf(m));
+        el.dataset.file = fileOf(m);
         pool.current.set(key, el);
+      } else if (kind === 'video' && el.dataset.file !== fileOf(m)) {
+        // The light copy just became ready: same picture, same times, it only plays more smoothly.
+        el.dataset.file = fileOf(m);
+        el.src = window.cupkata.mediaUrl(fileOf(m));
       }
       return el;
     };
