@@ -7,6 +7,13 @@
   --muted: #8b919c;
   --accent: #ff6f91;
   --accent-2: #ffb3c6;
+  --glass-edge: rgba(255, 255, 255, 0.16);
+  --glass-shine: inset 0 1px 0 rgba(255, 255, 255, 0.24), inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+  --glass-tint: linear-gradient(180deg, rgba(255, 255, 255, 0.13), rgba(255, 111, 145, 0.07));
+  --glass-tint-hover: linear-gradient(180deg, rgba(255, 255, 255, 0.2), rgba(255, 111, 145, 0.16));
+  --glass-pink: linear-gradient(180deg, rgba(255, 138, 168, 0.82), rgba(255, 95, 135, 0.58));
+  --glass-pink-hover: linear-gradient(180deg, rgba(255, 150, 178, 0.9), rgba(255, 105, 142, 0.68));
+  --glass-pink-soft: linear-gradient(180deg, rgba(255, 138, 168, 0.3), rgba(255, 95, 135, 0.16));
   --video: #3a4d73;
   --image: #5d3f74;
   --audio: #2f6150;
@@ -55,13 +62,22 @@ select, .btn {
   height: 30px; border-radius: 7px; border: 1px solid var(--border); background: var(--panel-2);
   color: var(--text); padding: 0 12px; font: inherit; cursor: pointer;
 }
-.btn:hover:not(:disabled) { border-color: #444b57; background: #2a2f38; }
+/* Buttons in tinted glass: light from above, a thin bright edge, and the pink of the app. */
+.btn {
+  border-radius: 10px; border-color: var(--glass-edge); background: var(--glass-tint);
+  box-shadow: var(--glass-shine), 0 1px 3px rgba(0, 0, 0, 0.3);
+  -webkit-backdrop-filter: blur(10px) saturate(160%); backdrop-filter: blur(10px) saturate(160%);
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+}
+.btn:hover:not(:disabled) { border-color: rgba(255, 255, 255, 0.26); background: var(--glass-tint-hover); }
+.btn:active:not(:disabled) { transform: scale(0.97); }
+.btn:focus-visible, .pc-btn:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 1px; }
 .btn:disabled { opacity: 0.4; cursor: default; }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: #1a0d12; font-weight: 600; }
-.btn.primary:hover:not(:disabled) { background: var(--accent-2); border-color: var(--accent-2); }
-.btn.ghost { background: transparent; border-color: transparent; }
-.btn.ghost:hover:not(:disabled) { background: var(--panel-2); }
-.btn.ghost.active { color: var(--accent-2); border-color: var(--accent); }
+.btn.primary { background: var(--glass-pink); border-color: rgba(255, 200, 215, 0.5); color: #fff; font-weight: 600; box-shadow: var(--glass-shine), 0 2px 10px rgba(255, 111, 145, 0.32); }
+.btn.primary:hover:not(:disabled) { background: var(--glass-pink-hover); border-color: rgba(255, 220, 230, 0.7); }
+.btn.ghost { background: transparent; border-color: transparent; box-shadow: none; }
+.btn.ghost:hover:not(:disabled) { background: var(--glass-tint-hover); border-color: var(--glass-edge); box-shadow: var(--glass-shine); }
+.btn.ghost.active { color: #fff; background: var(--glass-pink-soft); border-color: rgba(255, 138, 168, 0.6); box-shadow: var(--glass-shine); }
 
 .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; min-height: 0; min-width: 0; }
 .panel-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border-bottom: 1px solid var(--border); font-weight: 600; }
@@ -120,7 +136,7 @@ select, .btn {
 .pill.import { border-style: dashed; color: var(--text); }
 .segmented { display: flex; gap: 4px; }
 .segmented .btn { flex: 1; padding: 0; }
-.segmented .btn.active { border-color: var(--accent); color: var(--accent-2); }
+.segmented .btn.active { background: var(--glass-pink-soft); border-color: rgba(255, 138, 168, 0.6); color: #fff; }
 
 /* Left panel: tabs */
 .left { display: flex; flex-direction: column; overflow: hidden; }
@@ -191,9 +207,9 @@ select, .btn {
 .tc.current { color: var(--accent-2); }
 .play { width: 34px; height: 34px; border-radius: 50%; border: none; background: var(--text); color: #111; cursor: pointer; font-size: 12px; flex-shrink: 0; }
 .play:disabled { opacity: 0.3; cursor: default; }
-.pc-btn { display: inline-flex; align-items: center; justify-content: center; height: 28px; min-width: 28px; padding: 0 6px; border-radius: 6px; border: 1px solid transparent; background: none; color: var(--muted); font: inherit; font-size: 14px; cursor: pointer; }
-.pc-btn:hover:not(:disabled) { color: var(--text); background: var(--panel-2); }
-.pc-btn.on { color: var(--accent-2); border-color: var(--accent); }
+.pc-btn { display: inline-flex; align-items: center; justify-content: center; height: 28px; min-width: 28px; padding: 0 6px; border-radius: 9px; border: 1px solid transparent; background: none; color: var(--muted); font: inherit; font-size: 14px; cursor: pointer; }
+.pc-btn:hover:not(:disabled) { color: var(--text); background: var(--glass-tint-hover); border-color: var(--glass-edge); box-shadow: var(--glass-shine); }
+.pc-btn.on { color: #fff; background: var(--glass-pink-soft); border-color: rgba(255, 138, 168, 0.6); box-shadow: var(--glass-shine); }
 .pc-btn:disabled { opacity: 0.3; cursor: default; }
 /* Level meter */
 .vu { display: flex; gap: 2px; height: 22px; margin-left: 8px; padding: 2px; border-radius: 3px; background: #0c0d10; }
@@ -363,7 +379,7 @@ select, .btn {
 /* Speed presets (0,5× … 3×) */
 .speed-presets { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
 .speed-presets .btn { padding: 0; font-size: 12px; }
-.btn.active { border-color: var(--accent); color: var(--accent-2); }
+.btn.active { background: var(--glass-pink-soft); border-color: rgba(255, 138, 168, 0.6); color: #fff; }
 .clip-badge.speed { background: rgba(255, 111, 145, 0.85); color: #1a0d12; font-weight: 600; }
 
 /* Media tab: search, type filter, sort */
