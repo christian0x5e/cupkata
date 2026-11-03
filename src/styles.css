@@ -28,7 +28,13 @@
 html, body, #root { height: 100%; margin: 0; }
 body { user-select: none; overflow: hidden; }
 
-.app { display: grid; grid-template-rows: 48px minmax(0, 1fr) 6px 400px; height: 100%; padding: 0 6px 6px; }
+.app {
+  display: grid; grid-template-rows: 48px minmax(0, 1fr) 6px 400px; height: 100%; padding: 0 6px 6px;
+  /* A soft pink light behind the panels, which their glass lets through. */
+  background:
+    radial-gradient(900px 420px at 12% -6%, rgba(255, 111, 145, 0.2), transparent 70%),
+    radial-gradient(800px 420px at 92% 104%, rgba(255, 111, 145, 0.14), transparent 70%);
+}
 
 /* Bars between panels: drag to resize, double-click to reset. */
 .splitter { position: relative; z-index: 4; }
@@ -67,19 +73,27 @@ select, .btn {
   border-radius: 10px; border-color: var(--glass-edge); background: var(--glass-tint);
   box-shadow: var(--glass-shine), 0 1px 3px rgba(0, 0, 0, 0.3);
   -webkit-backdrop-filter: blur(10px) saturate(160%); backdrop-filter: blur(10px) saturate(160%);
-  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.2s, transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
-.btn:hover:not(:disabled) { border-color: rgba(255, 255, 255, 0.26); background: var(--glass-tint-hover); }
-.btn:active:not(:disabled) { transform: scale(0.97); }
+/* Under the cursor the button rises with a small bounce, and a reflection follows the pointer. */
+.btn, .pc-btn { --shine: radial-gradient(70px circle at var(--mx, 50%) var(--my, 0%), rgba(255, 255, 255, 0.32), transparent 72%); }
+.pc-btn { transition: background 0.15s, border-color 0.15s, box-shadow 0.2s, transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.btn:hover:not(:disabled), .pc-btn:hover:not(:disabled) { transform: translateY(-1px) scale(1.035); }
+.btn:active:not(:disabled), .pc-btn:active:not(:disabled) { transform: scale(0.96); transition-duration: 0.08s; }
+@media (prefers-reduced-motion: reduce) {
+  .btn, .pc-btn { transition: background 0.15s, border-color 0.15s; }
+  .btn:hover:not(:disabled), .btn:active:not(:disabled), .pc-btn:hover:not(:disabled), .pc-btn:active:not(:disabled) { transform: none; }
+}
+.btn:hover:not(:disabled) { border-color: rgba(255, 255, 255, 0.28); background: var(--shine), var(--glass-tint-hover); box-shadow: var(--glass-shine), 0 4px 14px rgba(255, 111, 145, 0.22); }
 .btn:focus-visible, .pc-btn:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 1px; }
 .btn:disabled { opacity: 0.4; cursor: default; }
 .btn.primary { background: var(--glass-pink); border-color: rgba(255, 200, 215, 0.5); color: #fff; font-weight: 600; box-shadow: var(--glass-shine), 0 2px 10px rgba(255, 111, 145, 0.32); }
-.btn.primary:hover:not(:disabled) { background: var(--glass-pink-hover); border-color: rgba(255, 220, 230, 0.7); }
+.btn.primary:hover:not(:disabled) { background: var(--shine), var(--glass-pink-hover); border-color: rgba(255, 220, 230, 0.7); box-shadow: var(--glass-shine), 0 5px 18px rgba(255, 111, 145, 0.5); }
 .btn.ghost { background: transparent; border-color: transparent; box-shadow: none; }
-.btn.ghost:hover:not(:disabled) { background: var(--glass-tint-hover); border-color: var(--glass-edge); box-shadow: var(--glass-shine); }
+.btn.ghost:hover:not(:disabled) { background: var(--shine), var(--glass-tint-hover); border-color: var(--glass-edge); box-shadow: var(--glass-shine), 0 4px 14px rgba(255, 111, 145, 0.18); }
 .btn.ghost.active { color: #fff; background: var(--glass-pink-soft); border-color: rgba(255, 138, 168, 0.6); box-shadow: var(--glass-shine); }
 
-.panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; min-height: 0; min-width: 0; }
+.panel { background: rgba(26, 29, 35, 0.84); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); border: 1px solid var(--border); border-radius: 10px; min-height: 0; min-width: 0; }
 .panel-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border-bottom: 1px solid var(--border); font-weight: 600; }
 
 .workspace { display: grid; grid-template-columns: 300px 6px minmax(0, 1fr) 6px 270px; min-height: 0; }
@@ -208,7 +222,7 @@ select, .btn {
 .play { width: 34px; height: 34px; border-radius: 50%; border: none; background: var(--text); color: #111; cursor: pointer; font-size: 12px; flex-shrink: 0; }
 .play:disabled { opacity: 0.3; cursor: default; }
 .pc-btn { display: inline-flex; align-items: center; justify-content: center; height: 28px; min-width: 28px; padding: 0 6px; border-radius: 9px; border: 1px solid transparent; background: none; color: var(--muted); font: inherit; font-size: 14px; cursor: pointer; }
-.pc-btn:hover:not(:disabled) { color: var(--text); background: var(--glass-tint-hover); border-color: var(--glass-edge); box-shadow: var(--glass-shine); }
+.pc-btn:hover:not(:disabled) { color: var(--text); background: var(--shine), var(--glass-tint-hover); border-color: var(--glass-edge); box-shadow: var(--glass-shine), 0 4px 14px rgba(255, 111, 145, 0.18); }
 .pc-btn.on { color: #fff; background: var(--glass-pink-soft); border-color: rgba(255, 138, 168, 0.6); box-shadow: var(--glass-shine); }
 .pc-btn:disabled { opacity: 0.3; cursor: default; }
 /* Level meter */
