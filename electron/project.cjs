@@ -3,7 +3,10 @@ const fs = require('fs');
 
 const TYPES = ['video', 'image', 'audio'];
 const TRACKS = ['video', 'audio', 'text', 'fx', 'filter'];
-const TRANSITION_IDS = ['fade', 'fadeblack', 'fadewhite', 'wipeleft', 'slideleft', 'circleopen'];
+const TRANSITION_IDS = [
+  'fade', 'fadeblack', 'fadewhite', 'wipeleft', 'wiperight', 'wipeup', 'wipedown',
+  'slideleft', 'slideright', 'slideup', 'slidedown', 'circleopen', 'zoomin', 'hblur',
+];
 const EFFECT_IDS = require('../shared/effects.json').ids;
 // Kept in sync with shared/filters.mjs (ESM, not loadable here synchronously).
 // Must list every id of shared/filters.mjs PRESETS (checked by the filters test).
@@ -90,6 +93,64 @@ function sanitizeAnim(anim) {
   return out;
 }
 
+// Same names and limits as src/keyframes.js.
+const KEYFRAME_RANGES = { scale: [0.02, 4], x: [-1, 2], y: [-1, 2], rotation: [-360, 360], opacity: [0, 1], volume: [0, 2] };
+function sanitizeKeyframes(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const out = {};
+  for (const [prop, [lo, hi]] of Object.entries(KEYFRAME_RANGES)) {
+    const list = Array.isArray(raw[prop]) ? raw[prop].filter((k) => Number.isFinite(k?.t) && Number.isFinite(k?.v)) : [];
+    if (list.length) out[prop] = list.slice(0, 100).map((k) => ({ t: k.t, v: clampTo(k.v, lo, hi) })).sort((a, b) => a.t - b.t);
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+const STICKER_IDS = ['arrow', 'ring', 'frame', 'band', 'line', 'star', 'heart', 'progress'];
+const MAX_WORDS = 200000;
+
+// Transcribed words of a file: w, then its start and end in seconds of the source.
+function sanitizeWords(raw) {
+  if (!Array.isArray(raw)) return undefined;
+  const words = raw
+    .slice(0, MAX_WORDS)
+    .filter((x) => x && typeof x.w === 'string' && Number.isFinite(x.t) && Number.isFinite(x.e))
+    .map((x) => ({ w: x.w.slice(0, 100), t: x.t, e: x.e }));
+  return words.length ? words : undefined;
+}
+
+// The words of a subtitle, in seconds from its start, and the way the spoken one stands out.
+function sanitizeCaptionWords(raw) {
+  if (!Array.isArray(raw)) return undefined;
+  const words = raw
+    .slice(0, 100)
+    .filter((x) => x && typeof x.w === 'string' && Number.isFinite(x.a) && Number.isFinite(x.b))
+    .map((x) => ({ w: x.w.slice(0, 100), a: x.a, b: x.b }));
+  return words.length ? words : undefined;
+}
+
+function sanitizeKaraoke(k) {
+  if (!k || !['color', 'box', 'pop'].includes(k.mode)) return undefined;
+  return { mode: k.mode, color: typeof k.color === 'string' && HEX.test(k.color) ? k.color : '#ffe000' };
+}
+
+function sanitizeReframe(raw) {
+  if (!Array.isArray(raw)) return null;
+  const points = raw
+    .slice(0, 200)
+    .filter((p) => p && [p.t, p.x, p.y].every(Number.isFinite))
+    .map((p) => ({ t: Math.max(0, p.t), x: clampTo(p.x, 0, 1), y: clampTo(p.y, 0, 1) }))
+    .sort((a, b) => a.t - b.t);
+  return points.length ? points : null;
+}
+
+function sanitizeMarkers(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .slice(0, 2000)
+    .filter((m) => m && typeof m.id === 'string' && Number.isFinite(m.time) && m.time >= 0)
+    .map((m) => ({ id: m.id, time: m.time, label: typeof m.label === 'string' ? m.label.slice(0, 80) : '', beat: m.beat === true }));
+}
+
 function sanitize(raw) {
   if (!raw || raw.app !== 'cupkata' || !Array.isArray(raw.media) || !Array.isArray(raw.clips)) {
     throw new Error("Ce fichier n'est pas un projet Cupkata valide");
@@ -106,6 +167,7 @@ function sanitize(raw) {
       width: finite(m.width),
       height: finite(m.height),
       hasAudio: m.hasAudio === true,
+      words: sanitizeWords(m.words),
     }));
   const ids = new Set(media.map((m) => m.id));
   const isText = (c) => c.track === 'text';
@@ -151,7 +213,18 @@ function sanitize(raw) {
           fadeOut: Math.max(0, finite(c.fadeOut, 0.5)),
         };
       }
-      if (isText(c)) return { ...base, text: c.text.slice(0, 500), style: sanitizeStyle(c.style), anim: sanitizeAnim(c.anim), auto: c.auto === true };
+      if (isText(c)) {
+        return {
+          ...base,
+          text: c.text.slice(0, 500),
+          style: sanitizeStyle(c.style),
+          anim: sanitizeAnim(c.anim),
+          auto: c.auto === true,
+          words: sanitizeCaptionWords(c.words),
+          karaoke: sanitizeKaraoke(c.karaoke),
+          sticker: STICKER_IDS.includes(c.sticker) ? c.sticker : undefined,
+        };
+      }
       return {
         ...base,
         volume: Math.min(2, Math.max(0, finite(c.volume, 1))),
@@ -164,6 +237,7 @@ function sanitize(raw) {
         fadeIn: Math.max(0, finite(c.fadeIn)),
         fadeOut: Math.max(0, finite(c.fadeOut)),
         muted: c.muted === true,
+        keyframes: sanitizeKeyframes(c.keyframes),
         duck: c.track === 'audio' && c.duck ? { level: Math.min(1, Math.max(0, finite(c.duck.level, 0.25))) } : null,
         filter:
           c.track === 'video' && typeof c.filter?.id === 'string' && FILTER_ID.test(c.filter.id)
@@ -180,6 +254,10 @@ function sanitize(raw) {
         // A clip whose background was removed remembers the original source, to put it back.
         cutout:
           c.cutout && ids.has(c.cutout.mediaId) ? { mediaId: c.cutout.mediaId, in: Math.max(0, finite(c.cutout.in)) } : null,
+        // The same for a clip that plays a copy with its voice cleaned.
+        cleaned:
+          c.cleaned && ids.has(c.cleaned.mediaId) ? { mediaId: c.cleaned.mediaId, in: Math.max(0, finite(c.cleaned.in)) } : null,
+        reframe: c.track === 'video' ? sanitizeReframe(c.reframe) : null,
         background:
           c.track === 'video' && ['blur', 'fill', 'color'].includes(c.background?.mode)
             ? {
@@ -211,7 +289,19 @@ function sanitize(raw) {
   }
   const kept = clips.filter((c) => c.track !== 'filter' || filterIds.has(c.filter.id));
   const ratio = RATIOS.includes(raw.settings?.ratio) ? raw.settings.ratio : '16:9';
-  return { media, clips: kept, filters, settings: { resolution, normalize: raw.settings?.normalize === true, ratio } };
+  const captions = raw.settings?.captions;
+  return {
+    media,
+    clips: kept,
+    filters,
+    markers: sanitizeMarkers(raw.markers),
+    settings: {
+      resolution,
+      normalize: raw.settings?.normalize === true,
+      ratio,
+      captions: captions ? { style: sanitizeStyle(captions.style), karaoke: sanitizeKaraoke(captions.karaoke) ?? null } : null,
+    },
+  };
 }
 
 function resolveMediaPath(m, baseDir) {
@@ -231,6 +321,7 @@ function toFileContent(data, filePath) {
       media: clean.media.map((m) => ({ ...m, relPath: dir ? path.relative(dir, m.path) : null })),
       clips: clean.clips,
       filters: clean.filters,
+      markers: clean.markers,
     },
     null,
     2,

@@ -20,7 +20,7 @@ const SOURCES = [
   ['selected', 'Le clip sélectionné seulement'],
 ];
 
-export default function SubtitlesModal({ open, canUseSelected, onClose, onRun }) {
+export default function SubtitlesModal({ open, wordsOnly = false, canUseSelected, onClose, onRun }) {
   const [language, setLanguage] = useState('french');
   const [model, setModel] = useState(MODELS[0][0]);
   const [source, setSource] = useState('video');
@@ -38,7 +38,7 @@ export default function SubtitlesModal({ open, canUseSelected, onClose, onRun })
   async function run() {
     setStatus({ running: true, phase: 'model', progress: 0 });
     try {
-      await onRun({ language, model, source, maxWords });
+      await onRun({ language, model, source: wordsOnly ? 'main' : source, maxWords, wordsOnly });
       onClose();
     } catch (err) {
       const message = String(err?.message || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
@@ -58,7 +58,7 @@ export default function SubtitlesModal({ open, canUseSelected, onClose, onRun })
   return (
     <div className="modal-backdrop">
       <div className="modal">
-        <h2>Sous-titres automatiques</h2>
+        <h2>{wordsOnly ? 'Transcrire la vidéo' : 'Sous-titres automatiques'}</h2>
         {!running && (
           <div className="form">
             <label className="field">
@@ -81,7 +81,7 @@ export default function SubtitlesModal({ open, canUseSelected, onClose, onRun })
                 ))}
               </select>
             </label>
-            <label className="field">
+            {!wordsOnly && <label className="field">
               <span>Transcrire</span>
               <select value={source} onChange={(e) => setSource(e.target.value)}>
                 {SOURCES.filter(([v]) => v !== 'selected' || canUseSelected).map(([v, l]) => (
@@ -90,17 +90,17 @@ export default function SubtitlesModal({ open, canUseSelected, onClose, onRun })
                   </option>
                 ))}
               </select>
-            </label>
-            <label className="field">
+            </label>}
+            {!wordsOnly && <label className="field">
               <span className="field-row">
                 <span>Mots par sous-titre</span>
                 <span className="field-value">{maxWords}</span>
               </span>
               <input type="range" min="2" max="14" step="1" value={maxWords} onChange={(e) => setMaxWords(Number(e.target.value))} />
-            </label>
+            </label>}
             <p className="hint">
               Tout se passe sur ton ordinateur. La première fois, le modèle de reconnaissance (Whisper) est téléchargé une seule
-              fois depuis Hugging Face. Les anciens sous-titres automatiques sont remplacés, tes textes ajoutés à la main sont gardés.
+              fois depuis Hugging Face.{!wordsOnly && ' Les anciens sous-titres automatiques sont remplacés, tes textes ajoutés à la main sont gardés.'}
             </p>
             {status?.error && <pre className="error-text">{status.error}</pre>}
           </div>
@@ -124,7 +124,7 @@ export default function SubtitlesModal({ open, canUseSelected, onClose, onRun })
                 Fermer
               </button>
               <button className="btn primary" onClick={run}>
-                Générer
+                {wordsOnly ? 'Transcrire' : 'Générer'}
               </button>
             </>
           )}

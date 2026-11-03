@@ -1,11 +1,12 @@
 import { clipTransform, overlayBox } from '../project.js';
 import { textBox, textStyle } from '../text.js';
+import { transformPatch } from '../keyframes.js';
 
 const SNAP = 0.015;
 
 // What can be moved on the preview: overlays (video lanes above the main track) and texts.
 // Each gives its box in canvas pixels, its current values and how to write new ones.
-function target(clip, media, W, H) {
+function target(clip, media, W, H, tau) {
   if (clip.track === 'text') {
     const s = textStyle(clip);
     return {
@@ -15,22 +16,22 @@ function target(clip, media, W, H) {
       write: (v) => ({ style: { ...clip.style, x: v.x, y: v.y, size: Math.round(v.scale), rotation: v.rotation } }),
     };
   }
-  const tf = clipTransform(clip);
+  const tf = clipTransform(clip, tau);
   return {
-    box: overlayBox(clip, media.width, media.height, W, H),
+    box: overlayBox(clip, media.width, media.height, W, H, tau),
     start: { x: tf.x, y: tf.y, scale: tf.scale, rotation: tf.rotation },
     limits: [0.05, 4],
-    write: (v) => ({ transform: { ...tf, ...v } }),
+    write: (v) => transformPatch(clip, tau, v),
   };
 }
 
 // Drags from a pointer event on the preview: 'move' (centre snaps to the middle lines, Alt: free),
 // 'scale' (from a corner), 'rotate' (Shift: 15° steps). `frame` is the canvas's screen rectangle.
-export function startTransformDrag(e, clip, mode, frame, W, H, media, dispatch) {
+export function startTransformDrag(e, clip, mode, frame, W, H, media, dispatch, tau) {
   e.preventDefault();
   e.stopPropagation();
   const k = frame.width / W;
-  const { box, start, limits, write } = target(clip, media, W, H);
+  const { box, start, limits, write } = target(clip, media, W, H, tau);
   const centre = { x: frame.left + box.cx * k, y: frame.top + box.cy * k };
   const p0 = { x: e.clientX, y: e.clientY };
   const dist0 = Math.max(4, Math.hypot(p0.x - centre.x, p0.y - centre.y));
@@ -69,8 +70,8 @@ export function startTransformDrag(e, clip, mode, frame, W, H, media, dispatch) 
 }
 
 // Is the point (canvas pixels) inside this item's (rotated) box?
-export function hitTest(clip, media, W, H, px, py) {
-  const b = target(clip, media, W, H).box;
+export function hitTest(clip, media, W, H, px, py, tau) {
+  const b = target(clip, media, W, H, tau).box;
   const a = (-b.rotation * Math.PI) / 180;
   const dx = px - b.cx;
   const dy = py - b.cy;
@@ -81,10 +82,10 @@ export function hitTest(clip, media, W, H, px, py) {
 
 // Frame drawn around the selected overlay or text on the preview, with its handles.
 // `canvas` is the preview canvas element, `width` its displayed width (kept current by the preview).
-export default function OverlayBox({ clip, media, canvas, width, W, H, dispatch }) {
+export default function OverlayBox({ clip, media, canvas, width, W, H, dispatch, tau }) {
   if (!canvas || !width || (clip.track !== 'text' && !media?.width)) return null;
   const k = width / W;
-  const b = target(clip, media, W, H).box;
+  const b = target(clip, media, W, H, tau).box;
   const style = {
     left: (b.cx - b.w / 2) * k,
     top: (b.cy - b.h / 2) * k,
@@ -94,7 +95,7 @@ export default function OverlayBox({ clip, media, canvas, width, W, H, dispatch 
   };
   const drag = (mode) => (e) => {
     if (e.button !== 0) return;
-    startTransformDrag(e, clip, mode, canvas.getBoundingClientRect(), W, H, media, dispatch);
+    startTransformDrag(e, clip, mode, canvas.getBoundingClientRect(), W, H, media, dispatch, tau);
   };
   return (
     <div

@@ -6,6 +6,11 @@ import { FILTER_CATEGORIES, PRESETS } from './filters.js';
 import { CATEGORIES, EFFECTS } from './effects.js';
 import { DEFAULT_TEXT_STYLE, FONTS, TEXT_ANIMS_IN, TEXT_ANIMS_LOOP, TEXT_ANIMS_OUT, TEXT_PRESETS } from './text.js';
 import { RATIOS } from './ratio.js';
+import { FPS } from './format.js';
+import { EMOJIS, SHAPES, STICKER_IDS } from './stickers.js';
+import { EXPORT_PRESETS } from './exportPresets.js';
+import { cutRangeOf, timelineWords } from './components/TranscriptPanel.jsx';
+import { KEYFRAME_RANGES, removeKeyframe, setKeyframe, MAX_KEYFRAMES, keyframesOf, keyframeAt } from './keyframes.js';
 
 // Carries out the commands of the local API (electron/control.cjs). `app.current` holds what App knows
 // at its latest render; commands go through the same reducer and functions as the buttons.
@@ -112,6 +117,7 @@ function describe(a) {
     media: state.media.map(({ id, path, name, type, duration, width, height, hasAudio, missing }) => ({ id, path, name, type, duration, width, height, hasAudio, missing: !!missing })),
     clips: [...state.clips].sort((x, y) => x.start - y.start || x.track.localeCompare(y.track) || laneOf(x) - laneOf(y)),
     custom_filters: state.filters.map(({ id, name }) => ({ id, name })),
+    markers: state.markers,
     selection: state.multi.length ? state.multi : state.selectedId ? [state.selectedId] : [],
     time: a.time,
     playing: a.playing,
@@ -130,6 +136,9 @@ function catalog(custom) {
     effects: EFFECTS.map(({ id, label, cat }) => ({ id, name: label, category: cat })),
     effect_categories: CATEGORIES,
     transitions: TRANSITIONS.map(({ id, label }) => ({ id, name: label })),
+    shapes: SHAPES.map(({ id, name }) => ({ id, name })),
+    emojis: EMOJIS,
+    export_presets: EXPORT_PRESETS.filter((p) => p.ratio).map(({ id, name, ratio, resolution }) => ({ id, name, ratio, resolution })),
     filters: PRESETS.map(({ id, name, cat }) => ({ id, name, category: cat })),
     filter_categories: FILTER_CATEGORIES,
     custom_filters: custom.map(({ id, name }) => ({ id, name })),
@@ -391,6 +400,23 @@ export function createCommands(app, dispatchRaw) {
       dispatch({ type: 'UPDATE_CLIP', id: clip.id, patch });
       return { clip: clipOf(app.current, clip.id) };
     },
+    clip_keyframe: (args) => {
+      const clip = clipOf(app.current, args.clip_id, 'video', 'audio');
+      if (clip.track === 'audio' && args.property !== 'volume') fail('invalid', 'Un clip audio n’a que la propriété volume.');
+      const tau = args.time - clip.start;
+      if (tau < 0 || tau > clip.duration) fail('invalid', 'time doit être à l’intérieur du clip.');
+      if (args.remove) {
+        if (!keyframeAt(clip, args.property, tau)) fail('invalid', 'Aucune image clé à cet instant.');
+      } else {
+        const [lo, hi] = KEYFRAME_RANGES[args.property];
+        if (args.value == null) fail('bad_args', 'Donne value, ou remove: true.');
+        if (args.value < lo || args.value > hi) fail('bad_args', `value doit être entre ${lo} et ${hi} pour ${args.property}.`);
+        if (keyframesOf(clip, args.property).length >= MAX_KEYFRAMES && !keyframeAt(clip, args.property, tau)) fail('invalid', `${MAX_KEYFRAMES} images clés au plus par propriété.`);
+      }
+      dispatch({ type: 'CHECKPOINT' });
+      dispatch({ type: 'UPDATE_CLIP', id: clip.id, patch: args.remove ? removeKeyframe(clip, args.property, tau) : setKeyframe(clip, args.property, tau, args.value) });
+      return { clip: clipOf(app.current, clip.id) };
+    },
     clip_move: (args) => {
       const a = app.current;
       const clip = clipOf(a, args.clip_id);
@@ -501,6 +527,69 @@ export function createCommands(app, dispatchRaw) {
       const clip = clipOf(app.current, args.clip_id, 'video');
       return runTool(() => app.current.cutoutClip(clip));
     },
+    marker_add: (args) => {
+      const time = args.time ?? app.current.time;
+      if (app.current.state.markers.some((m) => Math.abs(m.time - time) < 0.5 / FPS)) fail('invalid', 'Un marqueur existe déjà à cet instant.');
+      const marker = { id: crypto.randomUUID(), time, label: args.label ?? '', beat: false };
+      dispatch({ type: 'SET_MARKERS', markers: [...app.current.state.markers, marker] });
+      return { marker };
+    },
+    marker_remove: (args) => {
+      const { markers } = app.current.state;
+      if (!markers.some((m) => m.id === args.marker_id)) fail('not_found', 'Marqueur inconnu.');
+      dispatch({ type: 'SET_MARKERS', markers: markers.filter((m) => m.id !== args.marker_id) });
+      return { removed: true };
+    },
+    transcript_generate: (args) =>
+      runTool(() => app.current.generateSubtitles({ language: args.language ?? 'french', model: args.model ?? 'onnx-community/whisper-base', source: 'main', wordsOnly: true })),
+    transcript_get: () => ({ words: timelineWords(app.current.state.clips, app.current.state.media) }),
+    transcript_cut: (args) => {
+      const words = timelineWords(app.current.state.clips, app.current.state.media);
+      if (args.first > args.last || args.last >= words.length) fail('bad_args', 'Ces mots n’existent pas. Voir transcript_get.');
+      const range = cutRangeOf(words, args.first, args.last);
+      dispatch({ type: 'CUT_RANGES', ranges: [range] });
+      return { removed_seconds: range[1] - range[0] };
+    },
+    clip_beats: (args) => {
+      const clip = clipOf(app.current, args.clip_id, 'video', 'audio');
+      if (!app.current.state.media.find((m) => m.id === clip.mediaId)?.hasAudio) fail('invalid', 'Ce clip n’a pas de son.');
+      return runTool(() => app.current.applyBeats(clip, args.mode, args.every ?? 1));
+    },
+    clip_reframe: (args) => {
+      const clip = clipOf(app.current, args.clip_id, 'video');
+      if (laneOf(clip) !== 0) fail('invalid', 'Le recadrage concerne la piste principale.');
+      return runTool(() => app.current.reframeClip(clip));
+    },
+    clip_clean_voice: (args) => {
+      const clip = clipOf(app.current, args.clip_id, 'video', 'audio');
+      if (!app.current.state.media.find((m) => m.id === clip.mediaId)?.hasAudio) fail('invalid', 'Ce clip n’a pas de son.');
+      return runTool(() => app.current.cleanVoice(clip));
+    },
+    sticker_add: (args) => {
+      if (!!args.shape === !!args.emoji) fail('bad_args', 'Donne shape ou emoji.');
+      if (args.shape && !STICKER_IDS.includes(args.shape)) fail('bad_args', `Forme inconnue : ${args.shape}. Voir list_catalog.`);
+      if (args.color && !HEX.test(args.color)) fail('bad_args', 'color attend une couleur #rrggbb.');
+      const style = {
+        ...(args.emoji ? { font: 'Segoe UI Emoji', bold: false, size: 180 } : { color: '#ffe000', size: 160 }),
+        outline: false, y: 0.5,
+        ...(args.color ? { color: args.color } : {}),
+        ...(args.x != null ? { x: args.x } : {}),
+        ...(args.y != null ? { y: args.y } : {}),
+        ...(args.size != null ? { size: args.size } : {}),
+      };
+      dispatch({
+        type: 'ADD_TEXT', start: args.start ?? app.current.time, style, duration: args.duration,
+        text: args.emoji ?? SHAPES.find((s) => s.id === args.shape).name, sticker: args.shape,
+      });
+      return { clip: app.current.state.clips.find((c) => c.id === app.current.state.selectedId) };
+    },
+    captions_word_by_word: (args) => {
+      if (args.color && !HEX.test(args.color)) fail('bad_args', 'color attend une couleur #rrggbb.');
+      const karaoke = args.mode === 'none' ? null : { mode: args.mode, color: args.color ?? '#ffe000' };
+      app.current.setCaptions((c) => ({ ...c, karaoke }));
+      dispatch({ type: 'REPLACE_CLIPS', clips: app.current.state.clips.map((c) => (c.track === 'text' && c.auto ? { ...c, karaoke: karaoke ?? undefined } : c)) });
+      return { changed: true };
+    },
     clip_cut_silences: (args) => {
       const clip = clipOf(app.current, args.clip_id, 'video', 'audio');
       if (!app.current.state.media.find((m) => m.id === clip.mediaId)?.hasAudio) fail('invalid', 'Ce clip n’a pas de son.');
@@ -530,7 +619,21 @@ export function createCommands(app, dispatchRaw) {
     export_start: async (args) => {
       if (app.current.total <= 0) fail('invalid', 'La timeline est vide.');
       const target = await api.controlCheckTarget(args.path, '.mp4', args.overwrite);
-      app.current.startExport(target);
+      const preset = args.preset ? EXPORT_PRESETS.find((p) => p.id === args.preset && p.ratio) : null;
+      if (args.preset && !preset) fail('bad_args', `Préréglage inconnu : ${args.preset}. Voir list_catalog.`);
+      const a = app.current;
+      const from = args.from ?? 0;
+      const to = args.to ?? a.total;
+      if ((args.from != null || args.to != null) && !(from >= 0 && to > from && from < a.total)) fail('bad_args', 'Extrait invalide : il faut 0 ≤ from < to.');
+      if (preset) {
+        a.setRatio(preset.ratio);
+        a.setResolution(preset.resolution);
+        await settle();
+      }
+      app.current.startExport(target, {
+        encode: preset ? { video: preset.video, audio: preset.audio } : null,
+        range: args.from != null || args.to != null ? { start: from, duration: Math.min(to, a.total) - from } : null,
+      });
       return { started: true, path: target };
     },
     export_cancel: () => {

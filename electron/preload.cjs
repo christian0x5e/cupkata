@@ -84,6 +84,13 @@ contextBridge.exposeInMainWorld('cupkata', {
   saveSnapshot: (bytes) => ipcRenderer.invoke('snapshot:save', bytes),
   freezeFrame: (filePath, time) => ipcRenderer.invoke('media:freeze', filePath, time),
   reverseMedia: (filePath, start, span) => ipcRenderer.invoke('media:reverse', filePath, start, span),
+  aiTrack: (request) => ipcRenderer.invoke('ai:track', request),
+  cleanVoice: (filePath) => ipcRenderer.invoke('media:clean-voice', filePath),
+  findBeats: (filePath, start, duration) => ipcRenderer.invoke('media:beats', filePath, start, duration),
+  listSfx: () => ipcRenderer.invoke('sfx:list'),
+  listTemplates: () => ipcRenderer.invoke('templates:list'),
+  saveTemplate: (template) => ipcRenderer.invoke('templates:save', template),
+  deleteTemplate: (id) => ipcRenderer.invoke('templates:delete', id),
   transcribe: (request) => ipcRenderer.invoke('subtitles:run', request),
   cancelTranscription: () => ipcRenderer.invoke('subtitles:cancel'),
   onTranscriptionProgress: (cb) => {

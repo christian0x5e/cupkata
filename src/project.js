@@ -1,3 +1,5 @@
+import { shiftKeyframes, stillKeyframes, TRANSFORM_PROPS, valueAt } from './keyframes.js';
+
 export const MEDIA_MIME = 'application/x-cupkata-media';
 export const MEDIA_LIST_MIME = 'application/x-cupkata-media-list';
 export const IMAGE_DEFAULT_DURATION = 5;
@@ -21,7 +23,7 @@ export function clipGain(c, t) {
   const fi = Math.min(a.fadeIn, c.duration);
   const fo = Math.min(a.fadeOut, c.duration - fi);
   const x = t - c.start;
-  let g = a.volume;
+  let g = valueAt(c, 'volume', x, a.volume);
   if (fi > 0) g *= Math.min(1, Math.max(0, x / fi));
   if (fo > 0) g *= Math.min(1, Math.max(0, (c.duration - x) / fo));
   return g;
@@ -56,9 +58,17 @@ export const TRANSITIONS = [
   { id: 'fade', label: 'Fondu enchaîné' },
   { id: 'fadeblack', label: 'Fondu au noir' },
   { id: 'fadewhite', label: 'Flash blanc' },
-  { id: 'wipeleft', label: 'Balayage' },
-  { id: 'slideleft', label: 'Glissement' },
+  { id: 'wipeleft', label: 'Balayage ←' },
+  { id: 'wiperight', label: 'Balayage →' },
+  { id: 'wipeup', label: 'Balayage ↑' },
+  { id: 'wipedown', label: 'Balayage ↓' },
+  { id: 'slideleft', label: 'Glissement ←' },
+  { id: 'slideright', label: 'Glissement →' },
+  { id: 'slideup', label: 'Glissement ↑' },
+  { id: 'slidedown', label: 'Glissement ↓' },
   { id: 'circleopen', label: 'Cercle' },
+  { id: 'zoomin', label: 'Zoom' },
+  { id: 'hblur', label: 'Flou de mouvement' },
 ];
 
 // Background of a main-track clip where its picture doesn't fill the frame (e.g. a horizontal video
@@ -104,12 +114,18 @@ export const isOverlay = (c) => c.track === 'video' && laneOf(c) > 0;
 export const DEFAULT_TRANSFORM = { x: 0.5, y: 0.5, scale: 1, rotation: 0, opacity: 1 };
 // A clip that becomes an overlay starts at half size, so the main video stays visible around it.
 export const OVERLAY_TRANSFORM = { ...DEFAULT_TRANSFORM, scale: 0.5 };
-export const clipTransform = (c) => ({ ...DEFAULT_TRANSFORM, ...c.transform });
+// tau: seconds from the clip's start, for the values of its keyframes.
+export function clipTransform(c, tau) {
+  const tf = { ...DEFAULT_TRANSFORM, ...c.transform };
+  if (tau == null || !c.keyframes) return tf;
+  for (const prop of TRANSFORM_PROPS) tf[prop] = valueAt(c, prop, tau, tf[prop]);
+  return tf;
+}
 
 // Where an overlay sits in a W×H frame: its source fitted into the frame, times its scale, centred
 // on (x, y). The export (electron/media.cjs) computes the same box.
-export function overlayBox(c, mw, mh, W, H) {
-  const tf = clipTransform(c);
+export function overlayBox(c, mw, mh, W, H, tau) {
+  const tf = clipTransform(c, tau);
   const fit = Math.min(W / mw, H / mh);
   return { cx: tf.x * W, cy: tf.y * H, w: mw * fit * tf.scale, h: mh * fit * tf.scale, rotation: tf.rotation, opacity: tf.opacity };
 }
@@ -188,7 +204,7 @@ function placeItem(clips, track, action, duration) {
 
 // selectedId: the clip shown in Propriétés. multi: the clips selected together (2 or more), else empty.
 // clipboard: copies of the clips from the last Copy. pasted: where the last paste ended (moves the playhead).
-export const initialState = { media: [], clips: [], filters: [], selectedId: null, multi: [], clipboard: [], pasted: null, past: [], future: [] };
+export const initialState = { media: [], clips: [], filters: [], markers: [], selectedId: null, multi: [], clipboard: [], pasted: null, past: [], future: [] };
 
 // "Without effects": the clip as filmed, without effect, filter, colour settings or transition.
 const withoutEffects = (c) => ({ ...c, effect: null, filter: null, color: undefined, transition: null });
@@ -464,6 +480,122 @@ export function slideshowClips({ mediaIds, photoDuration, start, until = null, r
   }));
 }
 
+// ── Cuts driven by a transcript or a beat grid ──
+
+// A subtitle loses the words of a removed part of the timeline (from, to in seconds from its start).
+function withoutWords(c, from, to) {
+  if (!c.words?.length) return {};
+  const removed = to - Math.max(0, from);
+  const words = c.words
+    .filter((w) => w.b <= from + EPS || w.a >= to - EPS)
+    .map((w) => (w.a >= to - EPS ? { ...w, a: w.a - removed, b: w.b - removed } : w));
+  return words.length ? { words, text: words.map((w) => w.w).join(' ') } : { words: [] };
+}
+
+function cutOne(clips, a, b) {
+  const removed = b - a;
+  return clips.flatMap((x) => {
+    if (end(x) <= a + EPS) return [x];
+    if (x.start >= b - EPS) return [{ ...x, start: x.start - removed }];
+    const left = a - x.start;
+    const right = end(x) - b;
+    if (isMain(x)) {
+      const parts = [];
+      if (left > MIN_PART) parts.push({ ...x, duration: left, fadeOut: 0 });
+      if (right > MIN_PART) {
+        parts.push({
+          ...x, id: parts.length ? crypto.randomUUID() : x.id, start: a, in: x.in + (b - x.start) * clipSpeed(x), duration: right,
+          fadeIn: 0, ...(parts.length ? { transition: null } : {}),
+        });
+      }
+      return parts;
+    }
+    // Music that runs through the cut keeps playing; a sound that starts inside it loses its beginning.
+    if (x.track === 'audio' && left > 0 && right > 0) return [x];
+    if (left <= MIN_PART && right <= MIN_PART) return [];
+    const kept = Math.max(0, left) + Math.max(0, right);
+    if (kept <= MIN_PART) return [];
+    if (x.track === 'text') {
+      const words = withoutWords(x, a - x.start, b - x.start);
+      if (words.words && !words.words.length) return [];
+      return [{ ...x, ...words, start: Math.min(x.start, a), duration: kept }];
+    }
+    if (left > 0) return [{ ...x, duration: kept }];
+    return [{ ...x, start: a, in: (x.in ?? 0) + (b - x.start) * clipSpeed(x), duration: kept, fadeIn: 0 }];
+  });
+}
+
+// Removes these parts of the timeline ([from, to] in seconds): the main track closes up and everything
+// after follows. Later parts first, so the earlier ones keep their position.
+export function cutRanges(clips, ranges) {
+  const sorted = [...ranges].sort((x, y) => y[0] - x[0]);
+  return sorted.reduce((list, [a, b]) => cutOne(list, a, b), clips);
+}
+
+export function cutMarkers(markers, ranges) {
+  return markers.flatMap((m) => {
+    if (ranges.some(([a, b]) => m.time > a && m.time < b)) return [];
+    const before = ranges.filter(([, b]) => b <= m.time).reduce((n, [a, b]) => n + b - a, 0);
+    return [before ? { ...m, time: m.time - before } : m];
+  });
+}
+
+// Cuts the main track at these times, without moving anything.
+export function splitMainAt(clips, times) {
+  return clips.flatMap((c) => {
+    if (!isMain(c)) return [c];
+    const inside = times.filter((t) => t > c.start + MIN_PART && t < end(c) - MIN_PART).sort((a, b) => a - b);
+    if (!inside.length) return [c];
+    const edges = [c.start, ...inside, end(c)];
+    return inside.concat(end(c)).map((to, i) => ({
+      ...c,
+      id: i ? crypto.randomUUID() : c.id,
+      start: edges[i],
+      in: c.in + (edges[i] - c.start) * clipSpeed(c),
+      duration: to - edges[i],
+      fadeIn: i ? 0 : c.fadeIn,
+      fadeOut: i === inside.length ? c.fadeOut : 0,
+      transition: i ? null : c.transition,
+    }));
+  });
+}
+
+// Gives each clip of the main track the length that ends it on the next beat, at least half a beat
+// interval away so no clip flashes by. A clip too short to reach it keeps its length. The clips stay
+// in order, end to end from the first one's position.
+export function fitMainToBeats(clips, media, times) {
+  const byId = new Map(media.map((m) => [m.id, m]));
+  const main = clips.filter(isMain).sort(byStart);
+  if (!main.length) return { clips, fitted: 0 };
+  const beats = [...times].sort((a, b) => a - b);
+  const gaps = beats.slice(1).map((t, i) => t - beats[i]).sort((a, b) => a - b);
+  const shortest = Math.max(MIN_PART, (gaps[gaps.length >> 1] ?? 0) / 2);
+  const placed = new Map();
+  let cursor = main[0].start;
+  let fitted = 0;
+  for (const c of main) {
+    const m = byId.get(c.mediaId);
+    const longest = m?.type === 'image' ? Infinity : ((m?.duration ?? c.in + c.duration) - c.in) / clipSpeed(c);
+    const reachable = beats.filter((t) => t >= cursor + shortest && t - cursor <= longest + EPS);
+    const next = reachable[0];
+    const duration = next != null ? next - cursor : Math.min(c.duration, longest);
+    if (next != null) fitted += 1;
+    placed.set(c.id, { ...c, start: cursor, duration });
+    cursor += duration;
+  }
+  return { clips: clips.map((c) => placed.get(c.id) ?? c), fitted };
+}
+
+// The clips an export of [from, to] needs: the others are left out, so a short part stays quick.
+// Transitions borrow picture on both sides of a cut, hence the margin.
+const RANGE_MARGIN = 3;
+export function clipsForRange(clips, from, to) {
+  return clips.filter((c) => c.start < to + RANGE_MARGIN && end(c) > from - RANGE_MARGIN);
+}
+
+// Markers a cut moved come back with its undo (other marker changes aren't part of the history).
+const markersBeforeCut = new WeakMap();
+
 function commit(state, clips, extra = {}) {
   return { ...state, ...extra, clips: compactLanes(clips), past: [...state.past.slice(-99), state.clips], future: [] };
 }
@@ -709,7 +841,28 @@ function applyAction(state, action) {
       return { ...state, media: [...state.media, ...action.items] };
 
     case 'LOAD_PROJECT':
-      return { ...initialState, media: action.media, clips: action.clips, filters: action.filters || [] };
+      return { ...initialState, media: action.media, clips: action.clips, filters: action.filters || [], markers: action.markers || [] };
+
+    case 'SET_MARKERS':
+      return { ...state, markers: [...action.markers].sort((a, b) => a.time - b.time) };
+
+    // The transcribed words of a file, for the part of it that was just listened to.
+    case 'SET_WORDS':
+      return {
+        ...state,
+        media: state.media.map((m) => {
+          if (m.id !== action.mediaId) return m;
+          const kept = (m.words || []).filter((w) => w.e <= action.from || w.t >= action.to);
+          return { ...m, words: [...kept, ...action.words].sort((a, b) => a.t - b.t) };
+        }),
+      };
+
+    case 'CUT_RANGES': {
+      if (!action.ranges?.length) return state;
+      markersBeforeCut.set(state.clips, state.markers);
+      return commit(state, cutRanges(state.clips, action.ranges), { markers: cutMarkers(state.markers, action.ranges) });
+    }
+
 
     case 'ADD_FILTER':
       return { ...state, filters: [...state.filters, action.filter] };
@@ -751,11 +904,11 @@ function applyAction(state, action) {
     }
 
     case 'ADD_TEXT': {
-      const duration = TEXT_DEFAULT_DURATION;
+      const duration = action.duration ?? TEXT_DEFAULT_DURATION;
       const { start, lane } = placeItem(state.clips, 'text', { ...action, start: action.start ?? 0 }, duration);
       const clip = {
         id: crypto.randomUUID(), mediaId: null, track: 'text', lane, start, in: 0, duration,
-        text: 'Ton texte', style: { ...action.style },
+        text: action.text ?? 'Ton texte', style: { ...action.style }, ...(action.sticker ? { sticker: action.sticker } : {}),
       };
       return commit(state, [...state.clips, clip], { selectedId: clip.id });
     }
@@ -856,7 +1009,7 @@ function applyAction(state, action) {
       const still = {
         id: crypto.randomUUID(), mediaId: action.mediaId, track: c.track, lane: laneOf(c), start: t, in: 0, duration: d,
         volume: 1, fadeIn: 0, fadeOut: 0, muted: false,
-        color: c.color, filter: c.filter, transform: c.transform,
+        color: c.color, filter: c.filter, transform: c.transform, keyframes: stillKeyframes(c, left),
       };
       const clips = state.clips.flatMap((x) => {
         if (x.id === c.id) {
@@ -877,7 +1030,7 @@ function applyAction(state, action) {
       if (!c) return state;
       // extra: what to remember to go back (reversed / cutout); without it, the reverse state is set.
       const extra = action.extra ?? { reversed: action.reversed };
-      return commit(state, state.clips.map((x) => (x.id === c.id ? { ...x, mediaId: action.mediaId, in: action.in, ...extra } : x)));
+      return commit(state, state.clips.map((x) => (x.id === c.id ? { ...x, mediaId: action.mediaId, in: action.in, keyframes: shiftKeyframes(x.keyframes, action.in - x.in), ...extra } : x)));
     }
 
     // Cut out the silences: the clip becomes its spoken parts, one after the other (keep: ranges in
@@ -929,6 +1082,16 @@ function applyAction(state, action) {
       const clips = state.clips.flatMap((c) => {
         if (!ids.has(c.id)) return [c];
         const left = t - c.start;
+        if (c.words?.length) {
+          // A subtitle's words go with their half, and its text follows them.
+          const before = c.words.filter((w) => w.a < left);
+          const after = c.words.filter((w) => w.a >= left).map((w) => ({ ...w, a: w.a - left, b: w.b - left }));
+          const part = (words) => (words.length ? { words, text: words.map((w) => w.w).join(' ') } : { words: undefined });
+          return [
+            { ...c, ...part(before), duration: left, fadeOut: 0 },
+            { ...c, ...part(after), id: crypto.randomUUID(), start: t, duration: c.duration - left, fadeIn: 0 },
+          ];
+        }
         return [
           { ...c, duration: left, fadeOut: 0 },
           { ...c, id: crypto.randomUUID(), start: t, in: c.in + left * clipSpeed(c), duration: c.duration - left, fadeIn: 0, transition: null },
@@ -942,8 +1105,11 @@ function applyAction(state, action) {
 
     case 'UNDO': {
       if (!state.past.length) return state;
+      const before = markersBeforeCut.get(state.past[state.past.length - 1]);
+      if (before) markersBeforeCut.set(state.clips, state.markers);
       return {
         ...state,
+        ...(before ? { markers: before } : {}),
         clips: state.past[state.past.length - 1],
         past: state.past.slice(0, -1),
         future: [state.clips, ...state.future],
@@ -953,8 +1119,11 @@ function applyAction(state, action) {
 
     case 'REDO': {
       if (!state.future.length) return state;
+      const after = markersBeforeCut.get(state.future[0]);
+      if (after) markersBeforeCut.set(state.clips, state.markers);
       return {
         ...state,
+        ...(after ? { markers: after } : {}),
         clips: state.future[0],
         past: [...state.past, state.clips],
         future: state.future.slice(1),

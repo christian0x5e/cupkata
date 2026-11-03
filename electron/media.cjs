@@ -1,7 +1,7 @@
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
-const { execFile } = require('child_process');
+const { execFile, spawn } = require('child_process');
 
 const { effectFilter, mixer, saturate } = require('./effects.cjs');
 const DUCK = require('../shared/effects.json').duck;
@@ -152,7 +152,10 @@ async function computePeaks(filePath, cacheDir) {
 const n = (x) => Math.max(0, x).toFixed(3);
 const end = (c) => c.start + c.duration;
 const clampNum = (v, lo, hi, fallback) => (Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : fallback);
-const TRANSITION_IDS = ['fade', 'fadeblack', 'fadewhite', 'wipeleft', 'slideleft', 'circleopen'];
+const TRANSITION_IDS = [
+  'fade', 'fadeblack', 'fadewhite', 'wipeleft', 'wiperight', 'wipeup', 'wipedown',
+  'slideleft', 'slideright', 'slideup', 'slidedown', 'circleopen', 'zoomin', 'hblur',
+];
 
 // Colour filter: the same 3D table as the preview, written to a .cube file, blended by its amount.
 // lut3d needs forward slashes and an escaped drive colon inside the quoted path.
@@ -204,11 +207,29 @@ function atempo(speed) {
   return parts.map((p) => `,atempo=${p.toFixed(6)}`).join('');
 }
 
+// Same straight lines as src/keyframes.js valueAt(), as an FFmpeg expression of the stream's time t.
+function volumeExpression(c, tau0) {
+  const speed = c.speed ?? 1;
+  const keys = (c.keyframes?.volume || [])
+    .filter((k) => Number.isFinite(k.t) && Number.isFinite(k.v))
+    .map((k) => ({ tau: (k.t - c.in) / speed, v: Math.min(2, Math.max(0, k.v)) }));
+  if (!keys.length) return null;
+  let expr = keys[0].v.toFixed(4);
+  for (let i = 1; i < keys.length; i++) {
+    const [a, b] = [keys[i - 1], keys[i]];
+    if (b.tau > a.tau) expr += `+(${(b.v - a.v).toFixed(4)})*clip((t+${n(tau0)}-(${n(a.tau)}))/${n(b.tau - a.tau)},0,1)`;
+  }
+  return expr;
+}
+
 // Volume and fades for a clip segment of length d, as extra audio filters ('' when unchanged).
-function audioEffects(c, d) {
+// tau0: where the segment begins in the clip (seconds), for the volume keyframes.
+function audioEffects(c, d, tau0 = 0) {
   const parts = [];
   const volume = Number.isFinite(c.volume) ? Math.min(2, Math.max(0, c.volume)) : 1;
-  if (volume !== 1) parts.push(`volume=${volume.toFixed(3)}`);
+  const animated = volumeExpression(c, tau0);
+  if (animated) parts.push(`volume=eval=frame:volume='${animated}'`);
+  else if (volume !== 1) parts.push(`volume=${volume.toFixed(3)}`);
   const fi = Math.min(Math.max(0, c.fadeIn || 0), d);
   const fo = Math.min(Math.max(0, c.fadeOut || 0), d - fi);
   if (fi > 1e-3) parts.push(`afade=t=in:st=0:d=${n(fi)}`);
@@ -219,7 +240,26 @@ function audioEffects(c, d) {
 // A main-track clip's picture in the W×H frame, with its background — the same steps as the preview
 // (src/components/Preview.jsx paintFrame): blur = the picture zoomed past the frame, blurred and
 // dimmed, under the fitted picture; fill = zoomed to cover; color = a colour under the fitted picture.
-function backgroundChain(c, k, W, H, fps, alpha = false) {
+// A crop that follows a path through the source (src/reframe.js draws the same one in the preview).
+// The path's times are source seconds; the filter's t starts at src, where the input was cut.
+function pathExpr(points, key, T) {
+  const num = (v) => Number(v).toFixed(4);
+  let e = num(points[points.length - 1][key]);
+  for (let i = points.length - 2; i >= 0; i--) {
+    const [a, b] = [points[i], points[i + 1]];
+    e = `if(lt(${T},${num(b.t)}),${num(a[key])}+(${num(b[key] - a[key])})*(${T}-${num(a.t)})/${num(b.t - a.t)},${e})`;
+  }
+  return `if(lt(${T},${num(points[0].t)}),${num(points[0][key])},${e})`;
+}
+
+function reframeCrop(points, W, H, src) {
+  const T = `(t+${Number(src).toFixed(4)})`;
+  const x = `clip(${pathExpr(points, 'x', T)}*iw-${W}/2,0,iw-${W})`;
+  const y = `clip(${pathExpr(points, 'y', T)}*ih-${H}/2,0,ih-${H})`;
+  return `scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}:x='${x}':y='${y}'`;
+}
+
+function backgroundChain(c, k, W, H, fps, alpha = false, src = null) {
   const B = BACKGROUND;
   const bg = c.background || {};
   const tail = `,setsar=1,fps=${fps}`;
@@ -243,6 +283,7 @@ function backgroundChain(c, k, W, H, fps, alpha = false) {
     }
     return `format=yuva420p,${fit}[af${k}]${plain('000000')}`;
   }
+  if (c.reframe?.length && src != null) return `${reframeCrop(c.reframe, W, H, src)}${tail}`;
   if (bg.mode === 'fill') return `scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}${tail}`;
   if (bg.mode === 'color' && /^#[0-9a-f]{6}$/i.test(bg.color || '')) {
     return `${fit},pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=0x${bg.color.slice(1)}${tail}`;
@@ -348,9 +389,10 @@ function planExport(project, isAllowed = () => true) {
     // Clone-padding keeps the segment exactly L long even when the source has no picture left to borrow.
     const pre = s.startPad > 1e-3 ? `,tpad=start_mode=clone:start_duration=${n(s.startPad)}` : '';
     s.pictureChain =
-      `${backgroundChain(c, k, W, H, fps, m.alpha === true)}${colorFilter(c)}${lutFilter(c, k, project.lutFiles)},format=yuv420p,setpts=(PTS-STARTPTS)/${s.speed}${pre},` +
+      `${backgroundChain(c, k, W, H, fps, m.alpha === true, m.type === 'video' ? s.src : null)}${colorFilter(c)}${lutFilter(c, k, project.lutFiles)},format=yuv420p,setpts=(PTS-STARTPTS)/${s.speed}${pre},` +
       `tpad=stop_mode=clone:stop_duration=${n(s.L)},${regrid(s.L)}`;
     s.gpu = GPU_IDS.includes(c.effect?.type);
+    s.motion = hasMotion(c);
   });
 
   return { W, H, fps, total, segs, audioClips, overlayClips, getMedia, regrid };
@@ -373,23 +415,68 @@ function overlayGeometry(c, m, W, H) {
   };
 }
 
-// Segments whose effect runs on the GPU: their frames are decoded, processed in the renderer, re-encoded.
+const MOTION_PROPS = ['scale', 'x', 'y', 'rotation', 'opacity'];
+const hasMotion = (c) => MOTION_PROPS.some((p) => c.keyframes?.[p]?.length);
+
+// An overlay's input and the filters that bring it to the wanted size, ready to be placed.
+function overlayInput(c, m, fps) {
+  return m.type === 'image'
+    ? ['-loop', '1', '-framerate', String(fps), '-t', n(c.duration), '-i', m.path]
+    : ['-ss', n(c.in), '-t', n(c.duration * speedOf(c, m)), ...alphaDecoder(m), '-i', m.path];
+}
+const overlayPicture = (c, m, fps, w, h, i, lutFiles) =>
+  `setpts=(PTS-STARTPTS)/${speedOf(c, m)},fps=${fps},scale=${w}:${h},setsar=1${colorFilter(c)}${lutFilter(c, `o${i}`, lutFiles)},format=rgba`;
+
+// Animated overlays are drawn in the renderer at their largest size, onto a transparent frame.
+function overlayMotionJobs(project, overlayClips, getMedia, W, H, fps) {
+  const jobs = [];
+  overlayClips.forEach((c, i) => {
+    const m = getMedia(c);
+    if (!hasMotion(c) || !(m.width > 0 && m.height > 0)) return;
+    const largest = Math.max(clampNum(c.transform?.scale, 0.02, 4, 1), ...(c.keyframes.scale || []).map((k) => k.v));
+    const fit = Math.min(W / m.width, H / m.height) * Math.min(4, Math.max(0.02, largest));
+    const even = (v) => Math.max(2, 2 * Math.round(v / 2));
+    const [inWidth, inHeight] = [even(m.width * fit), even(m.height * fit)];
+    jobs.push({
+      k: `o${i}`,
+      width: W,
+      height: H,
+      inWidth,
+      inHeight,
+      alpha: true,
+      fps,
+      frames: Math.ceil(c.duration * fps),
+      tau0: 0,
+      effect: null,
+      motion: { clip: c, overlay: true, mediaWidth: m.width, mediaHeight: m.height, inWidth, inHeight },
+      inputArgs: overlayInput(c, m, fps),
+      chain: overlayPicture(c, m, fps, inWidth, inHeight, i, project.lutFiles),
+    });
+  });
+  return jobs;
+}
+
+// Frames that need the renderer (GPU effects, animated clips) are decoded, processed there, re-encoded.
 function gpuJobs(project, isAllowed) {
-  const { W, H, fps, segs } = planExport(project, isAllowed);
-  return segs
+  const { W, H, fps, segs, overlayClips, getMedia } = planExport(project, isAllowed);
+  const main = segs
     .map((s, k) => ({ s, k }))
-    .filter(({ s }) => s.gpu)
+    .filter(({ s }) => s.gpu || s.motion)
     .map(({ s, k }) => ({
       k,
       width: W,
       height: H,
+      inWidth: W,
+      inHeight: H,
       fps,
       frames: s.frames,
       tau0: s.tau0,
-      effect: { type: s.c.effect.type, intensity: clampNum(s.c.effect.intensity, 0, 1, 0.7) },
+      effect: s.gpu ? { type: s.c.effect.type, intensity: clampNum(s.c.effect.intensity, 0, 1, 0.7) } : null,
+      motion: s.motion ? { clip: s.c, overlay: false, inWidth: W, inHeight: H } : null,
       inputArgs: s.inputArgs,
-      chain: `${s.pictureChain},format=rgba`,
+      chain: `${s.pictureChain}${s.gpu ? '' : effectFilter(s.c, k, W, H, fps, s.tau0)},format=rgba`,
     }));
+  return [...main, ...overlayMotionJobs(project, overlayClips, getMedia, W, H, fps)];
 }
 
 // opts.videoOnly: picture only, high quality (first pass when the effect track is used).
@@ -493,7 +580,7 @@ function buildExportArgs(project, outPath, isAllowed = () => true, prerendered =
     if (videoOnly) return;
     if (wantsAudio) {
       filters.push(
-        `[${audioInput}:a]atrim=start=${n(c.in + s.skip * s.speed - s.src)}:duration=${n(s.d * s.speed)},asetpts=PTS-STARTPTS,${soundFormat(m)}${atempo(s.speed)}${audioEffects(c, s.d)}[a${k}]`,
+        `[${audioInput}:a]atrim=start=${n(c.in + s.skip * s.speed - s.src)}:duration=${n(s.d * s.speed)},asetpts=PTS-STARTPTS,${soundFormat(m)}${atempo(s.speed)}${audioEffects(c, s.d, s.skip)}[a${k}]`,
       );
     } else {
       silence(s.d, `a${k}`);
@@ -545,17 +632,21 @@ function buildExportArgs(project, outPath, isAllowed = () => true, prerendered =
       if (!(m.width > 0 && m.height > 0)) return;
       const g = overlayGeometry(c, m, W, H);
       const from = n(c.start);
-      inputs.push(
-        ...(m.type === 'image'
-          ? ['-loop', '1', '-framerate', String(fps), '-t', n(c.duration), '-i', m.path]
-          : ['-ss', n(c.in), '-t', n(c.duration * speedOf(c, m)), ...alphaDecoder(m), '-i', m.path]),
-      );
+      const moved = prerendered.get(`o${i}`);
+      if (moved) {
+        // Already drawn at its place on a full transparent frame, like the preview.
+        inputs.push('-i', moved);
+        filters.push(`[${idx++}:v]format=rgba,setpts=PTS-STARTPTS+${from}/TB[ov${i}]`);
+        filters.push(`${videoOut}[ov${i}]overlay=0:0:eof_action=pass:enable='between(t,${from},${n(c.start + c.duration)})'[vo${i}]`);
+        videoOut = `[vo${i}]`;
+        return;
+      }
+      inputs.push(...overlayInput(c, m, fps));
       const rad = ((g.rotation * Math.PI) / 180).toFixed(6);
       const rotate = Math.abs(g.rotation) > 0.01 ? `,rotate=${rad}:c=none:ow=rotw(${rad}):oh=roth(${rad})` : '';
       const fade = g.opacity < 0.999 ? `,colorchannelmixer=aa=${g.opacity.toFixed(4)}` : '';
       filters.push(
-        `[${idx++}:v]setpts=(PTS-STARTPTS)/${speedOf(c, m)},fps=${fps},scale=${g.w}:${g.h},setsar=1${colorFilter(c)}${lutFilter(c, `o${i}`, project.lutFiles)},` +
-          `format=rgba${fade}${rotate},setpts=PTS-STARTPTS+${from}/TB[ov${i}]`,
+        `[${idx++}:v]${overlayPicture(c, m, fps, g.w, g.h, i, project.lutFiles)}${fade}${rotate},setpts=PTS-STARTPTS+${from}/TB[ov${i}]`,
       );
       filters.push(
         `${videoOut}[ov${i}]overlay=x=${n(g.cx)}-overlay_w/2:y=${n(g.cy)}-overlay_h/2:eof_action=pass:` +
@@ -642,15 +733,98 @@ function buildExportArgs(project, outPath, isAllowed = () => true, prerendered =
     audioOut = '[anorm]';
   }
 
+  // A preset targets a bitrate; a range keeps just that part of the finished picture and sound.
+  const videoKbps = clampNum(project.encode?.video, 500, 100000, 0);
+  const audioKbps = clampNum(project.encode?.audio, 64, 320, 192);
+  const quality = videoKbps
+    ? ['-b:v', `${videoKbps}k`, '-maxrate', `${Math.round(videoKbps * 1.5)}k`, '-bufsize', `${videoKbps * 2}k`]
+    : ['-crf', '20'];
+  const from = clampNum(project.range?.start, 0, total, 0);
+  const length = clampNum(project.range?.duration, 0, total - from, 0);
+  const part = length > 0 ? ['-ss', n(from), '-t', n(length)] : [];
   const args = [
     '-y', '-hide_banner', ...inputs,
     '-filter_complex', filters.join(';'),
     '-map', videoOut, '-map', audioOut,
-    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p',
-    '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart',
+    ...part,
+    '-c:v', 'libx264', '-preset', 'veryfast', ...quality, '-pix_fmt', 'yuv420p',
+    '-c:a', 'aac', '-b:a', `${audioKbps}k`, '-movflags', '+faststart',
     outPath,
   ];
-  return { args, total };
+  return { args, total: length > 0 ? length : total };
 }
 
-module.exports = { ffmpegPath, ffprobePath, probe, computePeaks, monoFiles, buildExportArgs, planChunks, gpuJobs, ALL_EXT, VIDEO_EXT, IMAGE_EXT, AUDIO_EXT, MIME, ext };
+// Voice cleaning: rumble, background noise, muddiness and harshness, then a steady level. The noise
+// settings come from the file's own quietest moments, so a clean recording is left nearly untouched.
+// The final gain is one value for the whole file, measured first: an automatic gain would raise the
+// noise again wherever nobody speaks. The picture is copied as it is.
+const VOICE_LOUDNESS = -16;
+// afftdn delays the sound by this much (its analysis window): taken back so it stays in sync.
+const DENOISE_DELAY = 0.024;
+
+function cleanChain(floorDb) {
+  const noise = Math.min(-28, Math.max(-60, floorDb + 8));
+  const gate = (10 ** ((floorDb + 5) / 20)).toFixed(5);
+  return [
+    'highpass=f=80',
+    `afftdn=nr=30:nf=${noise.toFixed(1)}`,
+    `atrim=start=${DENOISE_DELAY},asetpts=PTS-STARTPTS`,
+    `agate=threshold=${gate}:ratio=3:attack=8:release=250`,
+    'equalizer=f=250:t=q:w=1:g=-1.5',
+    'equalizer=f=3500:t=q:w=1.2:g=2.5',
+    'deesser=i=0.3',
+    'acompressor=threshold=-20dB:ratio=3:attack=15:release=150:makeup=2',
+  ].join(',');
+}
+
+// The level of the file's quiet moments: the 10th percentile of its 100 ms levels, in dB.
+async function noiseFloor(file) {
+  const raw = await runBuffer(ffmpegPath, ['-v', 'error', '-i', file, '-map', '0:a:0', '-ac', '1', '-ar', '8000', '-f', 'f32le', '-']);
+  const samples = new Float32Array(raw.buffer.slice(raw.byteOffset, raw.byteOffset + (raw.byteLength & ~3)));
+  const levels = [];
+  for (let i = 0; i + 800 <= samples.length; i += 800) {
+    let sum = 0;
+    for (let k = i; k < i + 800; k++) sum += samples[k] * samples[k];
+    if (sum > 0) levels.push(10 * Math.log10(sum / 800));
+  }
+  levels.sort((x, y) => x - y);
+  return levels.length ? levels[levels.length >> 3] : -60;
+}
+
+function measureLoudness(file, chain) {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(ffmpegPath, ['-hide_banner', '-i', file, '-map', '0:a:0', '-af', `${chain},loudnorm=print_format=json`, '-f', 'null', '-'], { windowsHide: true });
+    let text = '';
+    proc.stderr.on('data', (d) => {
+      text = (text + d).slice(-4000);
+    });
+    proc.on('error', reject);
+    proc.on('close', (code) => {
+      const measured = Number(text.match(/"input_i"\s*:\s*"(-?[\d.]+)"/)?.[1]);
+      if (code !== 0) return reject(new Error(text.trim().split('\n').pop()));
+      resolve(Number.isFinite(measured) ? measured : null);
+    });
+  });
+}
+
+async function cleanVoiceFile(file, out, isVideo) {
+  const chain = cleanChain(await noiseFloor(file));
+  const measured = await measureLoudness(file, chain);
+  const gain = measured == null ? 0 : Math.min(18, Math.max(-12, VOICE_LOUDNESS - measured));
+  const opus = path.extname(out).toLowerCase() === '.webm';
+  await new Promise((resolve, reject) => {
+    const proc = spawn(ffmpegPath, [
+      '-y', '-v', 'error', '-i', file, ...(isVideo ? ['-map', '0:v:0', '-c:v', 'copy'] : ['-vn']), '-map', '0:a:0',
+      '-af', `${chain},volume=${gain.toFixed(2)}dB,alimiter=limit=0.95:level=disabled:latency=1`, '-ar', '48000',
+      ...(opus ? ['-c:a', 'libopus', '-b:a', '160k'] : ['-c:a', 'aac', '-b:a', '192k']), out,
+    ], { windowsHide: true });
+    let tail = '';
+    proc.stderr.on('data', (d) => {
+      tail = (tail + d).slice(-2000);
+    });
+    proc.on('error', reject);
+    proc.on('close', (code) => (code === 0 ? resolve() : reject(new Error(tail.trim().split('\n').pop() || 'FFmpeg a échoué'))));
+  });
+}
+
+module.exports = { cleanVoiceFile, ffmpegPath, ffprobePath, probe, computePeaks, monoFiles, buildExportArgs, planChunks, gpuJobs, ALL_EXT, VIDEO_EXT, IMAGE_EXT, AUDIO_EXT, MIME, ext };

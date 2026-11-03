@@ -3,6 +3,13 @@ import { clipAudio, clipSpeed, MAX_VOLUME, end, freeLane, insertMain, laneCount,
 import { formatShort, formatTime } from '../format.js';
 import { clipEffect, EFFECTS } from '../effects.js';
 import Waveform from './Waveform.jsx';
+
+// Small diamonds on a clip, where it has keyframes.
+function KeyframeMarks({ clip, pps }) {
+  const speed = clip.speed ?? 1;
+  const times = new Set(Object.values(clip.keyframes || {}).flat().map((k) => (k.t - clip.in) / speed));
+  return [...times].filter((tau) => tau >= 0 && tau <= clip.duration).map((tau) => <span key={tau} className="kf-mark" style={{ left: tau * pps }} />);
+}
 import { EFFECT_MIME } from './EffectsPanel.jsx';
 import { FILTER_MIME } from './FiltersPanel.jsx';
 import { filterInfo } from '../filters.js';
@@ -24,10 +31,11 @@ function tickStep(pps) {
 
 const isMainClip = (c) => c.track === 'video' && laneOf(c) === 0;
 
-export default function Timeline({ state, dispatch, time, playing, onSeek, pps, setPps, onOpenSubtitles, onTrim, peaks, onHover, onVoiceover, zone, onZone, onFreeze, magnet, setMagnet, link, setLink }) {
+export default function Timeline({ state, dispatch, time, playing, onSeek, pps, setPps, onOpenSubtitles, onToggleMarker, onTrim, peaks, onHover, onVoiceover, zone, onZone, onFreeze, magnet, setMagnet, link, setLink }) {
   const { clips, media, selectedId, past, future } = state;
   const chosen = useMemo(() => new Set(selectionOf(state)), [state.multi, selectedId]);
   const [marquee, setMarquee] = useState(null);
+  const [naming, setNaming] = useState(null);
   const mediaById = useMemo(() => Object.fromEntries(media.map((m) => [m.id, m])), [media]);
   const contentRef = useRef(null);
   const scrollRef = useRef(null);
@@ -708,6 +716,9 @@ export default function Timeline({ state, dispatch, time, playing, onSeek, pps, 
           ✎ Sous-titres auto
         </button>
         <span className="tl-sep" />
+        <button className="btn ghost" onClick={onToggleMarker} title="Poser ou retirer un marqueur à la tête de lecture (B). Maj + ↑ / ↓ pour sauter d'un marqueur à l'autre">
+          ⚑ Marqueur
+        </button>
         <button className="btn ghost" onClick={() => dispatch({ type: 'SPLIT', time })} title="Diviser à la tête de lecture (S)">
           ✂ Diviser
         </button>
@@ -823,6 +834,43 @@ export default function Timeline({ state, dispatch, time, playing, onSeek, pps, 
               {ticks.map((t) => (
                 <span key={t} className="tick" style={{ left: t * pps }}>
                   {Number.isInteger(t) ? formatShort(t) : ''}
+                </span>
+              ))}
+              {state.markers.map((m) => (
+                <span
+                  key={m.id}
+                  className={`tl-marker ${m.beat ? 'beat' : ''}`}
+                  style={{ left: m.time * pps }}
+                  title={`${m.label ? `${m.label} — ` : ''}${formatShort(m.time)}\nClic : y aller · Double-clic : nommer · Clic droit : retirer`}
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    onSeek(m.time);
+                  }}
+                  onDoubleClick={() => setNaming(m.id)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dispatch({ type: 'SET_MARKERS', markers: state.markers.filter((x) => x.id !== m.id) });
+                  }}
+                >
+                  {!m.beat && m.label && <span className="tl-marker-label">{m.label}</span>}
+                  {naming === m.id && (
+                    <input
+                      className="tl-marker-name"
+                      autoFocus
+                      maxLength={80}
+                      defaultValue={m.label}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onDoubleClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === 'Escape') e.currentTarget.blur();
+                      }}
+                      onBlur={(e) => {
+                        dispatch({ type: 'SET_MARKERS', markers: state.markers.map((x) => (x.id === m.id ? { ...x, label: e.target.value.trim() } : x)) });
+                        setNaming(null);
+                      }}
+                    />
+                  )}
                 </span>
               ))}
             </div>
@@ -998,6 +1046,7 @@ export default function Timeline({ state, dispatch, time, playing, onSeek, pps, 
                         title={`${m.name} — ${c.duration.toFixed(2)} s`}
                       >
                         <div className="handle l" onPointerDown={(e) => startDrag(e, c, 'trim-l')} />
+                        <KeyframeMarks clip={c} pps={pps} />
                         {m.hasAudio && !m.missing && (
                           <Waveform peaks={peaks?.get(m.path)} from={c.in} duration={c.duration * clipSpeed(c)} width={c.duration * pps} />
                         )}

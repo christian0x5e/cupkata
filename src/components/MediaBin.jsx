@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { MEDIA_LIST_MIME, MEDIA_MIME, naturalOrder } from '../project.js';
 import { formatShort } from '../format.js';
 import SideMenu from './SideMenu.jsx';
+import SfxPanel from './SfxPanel.jsx';
 import MusicBrowser, { AiMusicPanel, GENRES, LibraryPanel } from './MusicBrowser.jsx';
 import SlideshowPanel from './SlideshowPanel.jsx';
 
@@ -192,6 +193,7 @@ export default function MediaBin({ media, clips = [], time = 0, dispatch, onNoti
         importItem,
         { id: 'audio', label: 'Tes sons', count: count('audio') },
         { id: 'music', label: 'Musique', children: GENRES.map(([id, label]) => ({ id: `music:${id}`, label })) },
+        { id: 'sfx', label: 'Bruitages', title: 'Whoosh, clics, impacts, ambiances, créés par Cupkata et libres d’usage' },
         { id: 'itunes', label: 'iTunes / Apple', title: 'Tes achats iTunes / Apple Music téléchargés sur ce PC' },
         { id: 'ai', label: 'Musique IA', title: 'Créer une musique à partir d’une description, sur ton ordinateur' },
         { id: 'voice', label: 'Voix off', onClick: onVoiceover, title: 'Enregistrer ta voix au micro à partir de la tête de lecture' },
@@ -210,6 +212,8 @@ export default function MediaBin({ media, clips = [], time = 0, dispatch, onNoti
       <SlideshowPanel media={media} clips={clips} dispatch={dispatch} onNotice={onNotice} />
     ) : kind.startsWith('music:') ? (
       <MusicBrowser genre={kind.slice(6)} time={time} dispatch={dispatch} onNotice={onNotice} />
+    ) : kind === 'sfx' ? (
+      <SfxPanel media={media} time={time} dispatch={dispatch} onNotice={onNotice} />
     ) : kind === 'itunes' ? (
       <LibraryPanel media={media} time={time} dispatch={dispatch} onNotice={onNotice} />
     ) : kind === 'ai' ? (

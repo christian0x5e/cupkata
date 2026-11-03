@@ -7,7 +7,7 @@ const PW = 112;
 const PH = 46;
 
 // Small sample drawn with the same code as the preview and the export (a style preset, a bubble, an effect…).
-export function SampleTile({ style, text = 'Texte', label, active, onApply, size = 320 }) {
+export function SampleTile({ style, text = 'Texte', sticker, label, active, onApply, size = 320 }) {
   const ref = useRef(null);
   const key = JSON.stringify(style);
   useEffect(() => {
@@ -21,7 +21,7 @@ export function SampleTile({ style, text = 'Texte', label, active, onApply, size
     ctx.globalAlpha = 0.55;
     ctx.fillRect(0, 0, PW, PH);
     ctx.globalAlpha = 1;
-    drawText(ctx, { text, style: { ...style, size, x: 0.5, y: 0.5, rotation: 0, opacity: 1 } }, PW, PH);
+    drawText(ctx, { text, sticker, style: { ...style, size, x: 0.5, y: 0.5, rotation: 0, opacity: 1 } }, PW, PH);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, text, size]);
   return (
@@ -94,6 +94,24 @@ export default function TextInspector({ clip, dispatch, Slider, onSpeak, aiBusy 
     checkpoint();
     update({ anim: { ...a, ...patch } });
   };
+
+  // A shape has no words: only its colour, size, angle and opacity.
+  if (clip.sticker) {
+    return (
+      <>
+        <label className="field-row">
+          <span>Couleur</span>
+          <input type="color" value={s.color} onPointerDown={checkpoint} onChange={(e) => setStyle({ color: e.target.value })} />
+        </label>
+        <Slider label="Taille" value={s.size} min={20} max={400} step={1} format={(v) => `${v} px`}
+          onStart={checkpoint} onChange={(v) => setStyle({ size: v })} onReset={() => commitStyle({ size: 160 })} />
+        <Slider label="Rotation" value={s.rotation} min={-180} max={180} step={1} format={(v) => `${v}°`}
+          onStart={checkpoint} onChange={(v) => setStyle({ rotation: v })} onReset={() => commitStyle({ rotation: 0 })} />
+        <Slider label="Opacité" value={Math.round(s.opacity * 100)} min={0} max={100} step={1} format={(v) => `${v} %`}
+          onStart={checkpoint} onChange={(v) => setStyle({ opacity: v / 100 })} onReset={() => commitStyle({ opacity: 1 })} />
+      </>
+    );
+  }
   const pct = (v) => `${v} %`;
   const active = TEXT_PRESETS.find((p) => Object.entries(p.style).every(([k, v]) => s[k] === v));
   // Samples keep the text's own look and change only what the tile shows.

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import { initialState, laneOf, overlaps, reducer, selectionOf, sourceTime, totalDuration } from './project.js';
+import { clipsForRange, fitMainToBeats, initialState, laneOf, overlaps, reducer, selectionOf, sourceTime, splitMainAt, totalDuration } from './project.js';
+import ExportDialog from './components/ExportDialog.jsx';
+import TemplatesModal from './components/TemplatesModal.jsx';
 import GroupInspector from './components/GroupInspector.jsx';
 
 const FREEZE_DURATION = 3;
@@ -33,7 +35,7 @@ import { buildCaptions, placeCaptions } from './captions.js';
 import { DEFAULT_TEXT_STYLE } from './text.js';
 import { voiceIntervals } from './ducking.js';
 import { prerenderGpu } from './gpu/exporter.js';
-import { drawText, isAnimated, renderTextPng } from './text.js';
+import { drawText, hasKaraoke, isAnimated, karaokeKey, renderTextPng, textAnim } from './text.js';
 import { applyEffectItem, clipEffect, drawEffectOverlay, SEQUENCE_EFFECTS, STILL_EFFECTS } from './effects.js';
 import { effectEnvelope } from './project.js';
 import { applyFilterItem, clipFilter, filterInfo } from './filters.js';
@@ -195,7 +197,12 @@ export default function App() {
   const [aiLog, setAiLog] = useState([]);
   const previewCapture = useRef(null);
   const exportCancelled = useRef(false);
-  const [subtitlesOpen, setSubtitlesOpen] = useState(false);
+  // 'subtitles' or 'transcript' (the words only, for editing by text); null when closed.
+  const [subtitlesOpen, setSubtitlesOpen] = useState(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
+  // The look of the next generated subtitles: { style, karaoke }.
+  const [captions, setCaptions] = useState(null);
   const [leftTab, setLeftTab] = useState('media');
   const [peaks, setPeaks] = useState(() => new Map());
   const [hoverTime, setHoverTime] = useState(null);
@@ -234,6 +241,7 @@ export default function App() {
   const total = totalDuration(state.clips);
   const dirty =
     state.media !== saved.media || state.clips !== saved.clips || resolution !== saved.resolution || ratio !== saved.ratio ||
+    (state.markers !== saved.markers && state.markers.length + (saved.markers?.length ?? 0) > 0) ||
     (state.filters.length > 0 && state.filters !== saved.filters);
   const hasContent = state.media.length > 0 || state.clips.length > 0;
   const selectedClip = state.clips.find((c) => c.id === state.selectedId);
@@ -256,14 +264,15 @@ export default function App() {
 
   const serialize = useCallback(
     () => ({
-      settings: { resolution, normalize, ratio },
-      media: state.media.map(({ id, path, name, type, duration, width, height, hasAudio }) => ({
-        id, path, name, type, duration, width, height, hasAudio,
+      settings: { resolution, normalize, ratio, captions },
+      media: state.media.map(({ id, path, name, type, duration, width, height, hasAudio, words }) => ({
+        id, path, name, type, duration, width, height, hasAudio, words,
       })),
       clips: state.clips,
+      markers: state.markers,
       filters: state.filters.map(({ id, name, size, data }) => ({ id, name, size, data: Array.from(data, (v) => Math.round(v * 1e4) / 1e4) })),
     }),
-    [state.media, state.clips, state.filters, resolution, normalize, ratio],
+    [state.media, state.clips, state.filters, state.markers, resolution, normalize, ratio, captions],
   );
 
   // Track unsaved changes in the window title and for the close prompt.
@@ -290,14 +299,15 @@ export default function App() {
     setPlaying(false);
     setTime(0);
     setZone(null);
-    dispatch({ type: 'LOAD_PROJECT', media: p.media, clips: p.clips, filters: p.filters || [] });
+    dispatch({ type: 'LOAD_PROJECT', media: p.media, clips: p.clips, filters: p.filters || [], markers: p.markers || [] });
+    setCaptions(p.settings.captions || null);
     setResolution(p.settings.resolution);
     setRatio(p.settings.ratio || DEFAULT_RATIO);
     setNormalize(p.settings.normalize === true);
     setProjectPath(p.filePath);
     setSaved(
       markSaved
-        ? { media: p.media, clips: p.clips, filters: p.filters, resolution: p.settings.resolution, ratio: p.settings.ratio || DEFAULT_RATIO }
+        ? { media: p.media, clips: p.clips, filters: p.filters, markers: p.markers, resolution: p.settings.resolution, ratio: p.settings.ratio || DEFAULT_RATIO }
         : { media: null, clips: null, resolution: null, ratio: null },
     );
     const missing = p.media.filter((m) => m.missing).length;
@@ -331,7 +341,7 @@ export default function App() {
       const target = await api.saveProject(serialize(), saveAs ? null : projectPath);
       if (!target) return;
       setProjectPath(target);
-      setSaved({ media: state.media, clips: state.clips, filters: state.filters, resolution, ratio });
+      setSaved({ media: state.media, clips: state.clips, filters: state.filters, markers: state.markers, resolution, ratio });
       setNotice({ kind: 'ok', text: 'Projet enregistré' });
     } catch (err) {
       showError(err);
@@ -418,6 +428,159 @@ export default function App() {
       return null;
     } finally {
       setAiJob(null);
+    }
+  }
+
+  // Reframing: the crop follows the subject through the clip (a second click takes it away).
+  async function reframeClip(clip) {
+    if (clip.reframe?.length) {
+      dispatch({ type: 'CHECKPOINT' });
+      dispatch({ type: 'UPDATE_CLIP', id: clip.id, patch: { reframe: null } });
+      return;
+    }
+    await reframeClips([clip]);
+  }
+
+  async function reframeClips(list) {
+    const byId = new Map(state.media.map((m) => [m.id, m]));
+    const usable = list.filter((c) => byId.get(c.mediaId)?.type === 'video' && !byId.get(c.mediaId).missing);
+    if (!usable.length) {
+      setNotice({ kind: 'error', text: 'Il n’y a pas de clip vidéo à recadrer.' });
+      return;
+    }
+    const paths = await runAi('Recherche du sujet', async () => {
+      const found = new Map();
+      for (const c of usable) {
+        const m = byId.get(c.mediaId);
+        found.set(c.id, await api.aiTrack({ path: m.path, start: c.in, span: c.duration * (c.speed ?? 1), width: m.width, height: m.height }));
+      }
+      return found;
+    });
+    if (!paths) return;
+    const followed = [...paths.values()].filter((p) => p.length).length;
+    if (!followed) {
+      setNotice({ kind: 'error', text: 'Aucune personne trouvée : le recadrage suit les personnes visibles à l’image.' });
+      return;
+    }
+    dispatch({ type: 'REPLACE_CLIPS', clips: state.clips.map((c) => (paths.get(c.id)?.length ? { ...c, reframe: paths.get(c.id) } : c)) });
+    setNotice({ kind: 'ok', text: `Recadrage appliqué à ${followed} clip${followed > 1 ? 's' : ''} : l’image suit le sujet.` });
+  }
+
+  // Voice cleaning: the clip plays a cleaned copy of its file (a second click puts the original back).
+  async function cleanVoice(clip) {
+    if (clip.cleaned) {
+      dispatch({ type: 'SET_SOURCE', id: clip.id, mediaId: clip.cleaned.mediaId, in: clip.in, extra: { cleaned: null } });
+      return;
+    }
+    const m = state.media.find((x) => x.id === clip.mediaId);
+    setPlaying(false);
+    setBusy('clean');
+    try {
+      const item = await api.cleanVoice(m.path);
+      let id = state.media.find((x) => x.path === item.path)?.id;
+      if (!id) {
+        id = crypto.randomUUID();
+        dispatch({ type: 'ADD_MEDIA', items: [{ ...item, id, words: m.words }] });
+      }
+      dispatch({ type: 'SET_SOURCE', id: clip.id, mediaId: id, in: clip.in, extra: { cleaned: { mediaId: m.id, in: clip.in } } });
+      setNotice({ kind: 'ok', text: 'Voix nettoyée : bruit de fond réduit et niveau égalisé.' });
+    } catch (err) {
+      showError(err);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // The beats of a clip's sound on the timeline, one out of every.
+  async function beatsOf(clip, every) {
+    const m = state.media.find((x) => x.id === clip.mediaId);
+    const speed = clip.speed ?? 1;
+    const { beats, bpm } = await api.findBeats(m.path, clip.in, clip.duration * speed);
+    const times = beats.map((t) => clip.start + (t - clip.in) / speed).filter((t, i) => i % every === 0 && t < clip.start + clip.duration);
+    return { times, bpm };
+  }
+
+  // mode: 'markers' shows the beats, 'fit' ends each main-track clip on one, 'split' cuts the main track on them.
+  async function applyBeats(clip, mode, every = 1) {
+    setPlaying(false);
+    setBusy('beats');
+    try {
+      const { times, bpm } = await beatsOf(clip, every);
+      if (!times.length) {
+        setNotice({ kind: 'error', text: 'Aucun rythme trouvé dans ce son.' });
+        return;
+      }
+      if (mode === 'markers') {
+        const others = state.markers.filter((x) => !x.beat);
+        dispatch({ type: 'SET_MARKERS', markers: [...others, ...times.map((time) => ({ id: crypto.randomUUID(), time, label: '', beat: true }))] });
+        setNotice({ kind: 'ok', text: `${times.length} temps forts marqués (environ ${bpm} BPM).` });
+      } else if (mode === 'fit') {
+        const { clips, fitted } = fitMainToBeats(state.clips, state.media, times);
+        if (!fitted) {
+          setNotice({ kind: 'error', text: 'Aucun clip de la piste principale ne peut atteindre un temps fort.' });
+          return;
+        }
+        dispatch({ type: 'REPLACE_CLIPS', clips });
+        setNotice({ kind: 'ok', text: `${fitted} clip${fitted > 1 ? 's' : ''} calé${fitted > 1 ? 's' : ''} sur le rythme (environ ${bpm} BPM).` });
+      } else {
+        dispatch({ type: 'REPLACE_CLIPS', clips: splitMainAt(state.clips, times) });
+        setNotice({ kind: 'ok', text: `Piste principale coupée sur le rythme (environ ${bpm} BPM).` });
+      }
+    } catch (err) {
+      showError(err);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function toggleMarker(at, label = '') {
+    const near = state.markers.find((x) => Math.abs(x.time - at) < 0.5 / FPS);
+    dispatch({
+      type: 'SET_MARKERS',
+      markers: near ? state.markers.filter((x) => x !== near) : [...state.markers, { id: crypto.randomUUID(), time: at, label, beat: false }],
+    });
+  }
+
+  // A template opens as a new project; its intro comes back only if its files are still there.
+  async function applyTemplate(template) {
+    if (!(await confirmDiscard())) return;
+    try {
+      const found = new Map((await api.probeMedia(template.media.map((m) => m.path))).filter((r) => !r.error).map((r) => [r.path, r]));
+      const media = template.media.filter((m) => found.has(m.path)).map((m) => ({ ...found.get(m.path), id: m.id, words: m.words }));
+      const known = new Set(media.map((m) => m.id));
+      const clips = template.clips.filter((c) => !c.mediaId || known.has(c.mediaId)).map((c) => ({ ...c, id: crypto.randomUUID() }));
+      applyProject({ media, clips, filters: [], markers: [], settings: template.settings, filePath: null }, true);
+      setTemplatesOpen(false);
+      const lost = template.media.length - media.length;
+      setNotice(lost
+        ? { kind: 'error', text: `Modèle « ${template.name} » : ${lost} fichier${lost > 1 ? 's' : ''} de l’intro introuvable${lost > 1 ? 's' : ''}.` }
+        : { kind: 'ok', text: `Nouveau projet depuis le modèle « ${template.name} ».` });
+    } catch (err) {
+      showError(err);
+    }
+  }
+
+  async function saveTemplate(name, withIntro) {
+    const chosen = withIntro ? new Set(selectionOf(state)) : new Set();
+    const intro = state.clips.filter((c) => chosen.has(c.id));
+    const shift = intro.reduce((t, c) => Math.min(t, c.start), Infinity);
+    const usedMedia = new Set(intro.map((c) => c.mediaId));
+    const firstCaption = state.clips.find((c) => c.track === 'text' && c.auto);
+    try {
+      const list = await api.saveTemplate({
+        name,
+        settings: {
+          resolution, ratio, normalize,
+          captions: { style: firstCaption?.style ?? captions?.style ?? {}, karaoke: firstCaption ? firstCaption.karaoke ?? null : captions?.karaoke ?? null },
+        },
+        media: serialize().media.filter((m) => usedMedia.has(m.id)),
+        clips: intro.map((c) => ({ ...c, start: c.start - shift })),
+      });
+      setNotice({ kind: 'ok', text: `Modèle « ${name.trim()} » enregistré.` });
+      return list;
+    } catch (err) {
+      showError(err);
+      return null;
     }
   }
 
@@ -517,11 +680,11 @@ export default function App() {
     dispatch({ type: 'TRIM_TO', id: target.id, side, time });
   };
 
-  latest.current = { magnet, link, clips: state.clips, chosen: selectionOf(state), togglePlay, seek, time, selectedId: state.selectedId, saveProject, openProject, newProject, startExport, trimToPlayhead, setZoneEdge };
+  latest.current = { toggleMarker, markers: state.markers, magnet, link, clips: state.clips, chosen: selectionOf(state), togglePlay, seek, time, selectedId: state.selectedId, saveProject, openProject, newProject, startExport, trimToPlayhead, setZoneEdge };
 
   // Lets automated checks export to a known path without the save dialog.
   useEffect(() => {
-    window.cupkataDebug = { exportTo: (filePath) => latest.current.startExport(filePath) };
+    window.cupkataDebug = { exportTo: (filePath, options) => latest.current.startExport(filePath, options) };
   }, []);
 
   // What the local API works with (see control.js), as of this render.
@@ -529,7 +692,7 @@ export default function App() {
   control.current = {
     state, time, playing, zone, total, resolution, ratio, normalize, projectPath, recovery, exp, aiJob, busy, dirty, hasContent, notices,
     preview: previewCapture, serialize, applyProject, seek, togglePlay, setBusy, setPlaying, setHoverTime, setZone, setResolution, setRatio, setNormalize,
-    freezeFrame, reverseClip, cutoutClip, cutSilences, speakText, translateTexts, startExport, cleanError,
+    freezeFrame, reverseClip, cutoutClip, cutSilences, speakText, translateTexts, startExport, cleanError, reframeClip, cleanVoice, applyBeats, toggleMarker, setCaptions,
     generateSubtitles: async (options) => {
       setBusy('subtitles');
       try {
@@ -546,7 +709,7 @@ export default function App() {
     },
     markSaved: (target) => {
       setProjectPath(target);
-      setSaved({ media: state.media, clips: state.clips, filters: state.filters, resolution, ratio });
+      setSaved({ media: state.media, clips: state.clips, filters: state.filters, markers: state.markers, resolution, ratio });
     },
     chooseRecovery: (resume) => {
       if (resume) applyProject(recovery, false);
@@ -599,6 +762,8 @@ export default function App() {
       } else if (e.ctrlKey && key === 'y') {
         e.preventDefault();
         dispatch({ type: 'REDO' });
+      } else if (!e.ctrlKey && key === 'b') {
+        l.toggleMarker(l.time);
       } else if (!e.ctrlKey && key === 's') {
         dispatch({ type: 'SPLIT', time: l.time });
       } else if (!e.ctrlKey && key === 't') {
@@ -637,6 +802,12 @@ export default function App() {
       } else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && e.altKey) {
         e.preventDefault();
         dispatch({ type: 'NUDGE', ids: l.chosen, delta: (e.key === 'ArrowLeft' ? -1 : 1) * (e.shiftKey ? 1 : 1 / FPS) });
+      } else if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && e.shiftKey) {
+        // Shift + Up / Down: the playhead jumps to the previous or next marker.
+        e.preventDefault();
+        const times = l.markers.map((x) => x.time);
+        const to = e.key === 'ArrowUp' ? times.filter((t) => t < l.time - 1e-3).pop() : times.find((t) => t > l.time + 1e-3);
+        if (to != null) l.seek(to);
       } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
         // Up / Down: the playhead jumps to the previous or next cut.
         e.preventDefault();
@@ -659,7 +830,7 @@ export default function App() {
     };
   }, []);
 
-  async function generateSubtitles({ language, model, source, maxWords }) {
+  async function generateSubtitles({ language, model, source, maxWords, wordsOnly = false }) {
     setPlaying(false);
     const byId = new Map(state.media.map((m) => [m.id, m]));
     const usable = (c) => {
@@ -669,18 +840,33 @@ export default function App() {
     const sourceClips =
       source === 'selected'
         ? state.clips.filter((c) => c.id === state.selectedId && usable(c))
-        : state.clips.filter((c) => c.track === source && usable(c));
+        : state.clips.filter((c) => (source === 'main' ? c.track === 'video' && laneOf(c) === 0 : c.track === source) && usable(c));
     if (!sourceClips.length) throw new Error('Aucun clip avec du son à transcrire ici.');
+    sourceClips.sort((a, b) => a.start - b.start);
     const segments = await api.transcribe({
       language,
       model,
-      items: sourceClips
-        .sort((a, b) => a.start - b.start)
-        .map((c) => ({ path: byId.get(c.mediaId).path, in: c.in, duration: c.duration, start: c.start, speed: c.speed ?? 1 })),
+      items: sourceClips.map((c) => ({ path: byId.get(c.mediaId).path, in: c.in, duration: c.duration, start: c.start, speed: c.speed ?? 1 })),
     });
-    const captions = buildCaptions(segments, { maxWords });
-    if (!captions.length) throw new Error("Aucune parole n'a été reconnue. Vérifie la langue choisie ou le volume du son.");
-    const { clips, added, skipped } = placeCaptions(state.clips, captions, { ...DEFAULT_TEXT_STYLE, size: 60 });
+    // The words are kept on the file, in its own seconds: editing by text works from them.
+    sourceClips.forEach((c, i) => {
+      dispatch({
+        type: 'SET_WORDS',
+        mediaId: c.mediaId,
+        from: c.in,
+        to: c.in + c.duration * (c.speed ?? 1),
+        words: segments.filter((s) => s.item === i).flatMap((s) => s.words || []).map((w) => ({ w: w.w, t: w.sourceStart, e: w.sourceEnd })),
+      });
+    });
+    if (wordsOnly) {
+      const count = segments.reduce((n, s) => n + (s.words?.length ?? 0), 0);
+      if (!count) throw new Error("Aucune parole n'a été reconnue. Vérifie la langue choisie ou le volume du son.");
+      setNotice({ kind: 'ok', text: `${count} mots transcrits : supprime-les du texte pour couper la vidéo.` });
+      return;
+    }
+    const lines = buildCaptions(segments, { maxWords });
+    if (!lines.length) throw new Error("Aucune parole n'a été reconnue. Vérifie la langue choisie ou le volume du son.");
+    const { clips, added, skipped } = placeCaptions(state.clips, lines, { ...DEFAULT_TEXT_STYLE, size: 60, ...captions?.style }, captions?.karaoke);
     dispatch({ type: 'REPLACE_CLIPS', clips });
     setNotice({
       kind: 'ok',
@@ -689,11 +875,13 @@ export default function App() {
     });
   }
 
-  async function startExport(outOverride) {
+  // options: encode (bitrates of a preset) and range ({ start, duration }: export only that part).
+  async function startExport(outOverride, { encode = null, range = null } = {}) {
     setPlaying(false);
     const out = typeof outOverride === 'string' ? outOverride : await api.chooseExportPath();
     if (!out) return;
     const [width, height] = frameSize(ratio, SHORT_SIDE[resolution]);
+    const clips = range ? clipsForRange(state.clips, range.start, range.start + range.duration) : state.clips;
     exportCancelled.current = false;
     setExp({ status: 'preparing', progress: 0 });
     const off = api.onExportProgress((p) => setExp((e) => (e?.status === 'running' ? { ...e, progress: p } : e)));
@@ -701,13 +889,13 @@ export default function App() {
     try {
       token = await api.prepareExport();
       const luts = {};
-      for (const c of state.clips) {
+      for (const c of clips) {
         const info = (c.track === 'video' || c.track === 'filter') && c.filter?.id ? filterInfo(c.filter.id, state.filters) : null;
         if (info) luts[info.id] = { size: info.size, data: info.data };
       }
       await api.exportLuts(token, luts);
       const overlays = [];
-      const effectClips = state.clips.filter((c) => c.track === 'video' && clipEffect(c));
+      const effectClips = clips.filter((c) => c.track === 'video' && clipEffect(c));
       const sequenceFrames = effectClips
         .filter((c) => SEQUENCE_EFFECTS.has(clipEffect(c).type))
         .reduce((n, c) => n + Math.ceil(c.duration * FPS), 0);
@@ -736,11 +924,15 @@ export default function App() {
       }
 
       // Stacked lanes are applied from the bottom lane up, exactly like the preview.
-      const byLane = [...state.clips].sort((a, b) => laneOf(a) - laneOf(b));
+      const byLane = [...clips].sort((a, b) => laneOf(a) - laneOf(b));
       // Still texts are one picture; animated ones are drawn frame by frame, like the preview.
       const textOverlays = [];
-      const texts = byLane.filter((c) => c.track === 'text' && c.text?.trim());
-      const animatedFrames = texts.filter(isAnimated).reduce((n, c) => n + Math.ceil(c.duration * FPS), 0);
+      const allTexts = byLane.filter((c) => c.track === 'text' && c.text?.trim());
+      const texts = allTexts.filter((c) => !hasKaraoke(c));
+      const spoken = allTexts.filter(hasKaraoke);
+      const spokenFrom = spoken.reduce((t, c) => Math.min(t, c.start), Infinity);
+      const spokenFrames = spoken.length ? Math.ceil((spoken.reduce((t, c) => Math.max(t, c.start + c.duration), 0) - spokenFrom) * FPS) : 0;
+      const animatedFrames = texts.filter(isAnimated).reduce((n, c) => n + Math.ceil(c.duration * FPS), 0) + spokenFrames;
       let textDone = 0;
       for (const [k, c] of texts.entries()) {
         if (!isAnimated(c)) {
@@ -759,14 +951,37 @@ export default function App() {
         }
         textOverlays.push({ sequence: seq, start: c.start, duration: c.duration });
       }
+      // Word-by-word subtitles share one picture sequence, which keeps the FFmpeg graph small; between
+      // two words nothing changes, so the same frame is written again without being drawn.
+      if (spoken.length) {
+        let shown = null;
+        let bytes = null;
+        for (let i = 0; i < spokenFrames; i++) {
+          if (exportCancelled.current) throw new Error('Export annulé');
+          const t = spokenFrom + i / FPS;
+          const live = spoken.filter((c) => t >= c.start && t < c.start + c.duration);
+          const moving = live.some((c) => textAnim(c).in !== 'none' || textAnim(c).out !== 'none' || textAnim(c).loop !== 'none');
+          const key = moving ? `frame${i}` : live.map((c) => karaokeKey(c, t - c.start)).join('|');
+          if (key !== shown || !bytes) {
+            ctx.clearRect(0, 0, width, height);
+            for (const c of live) drawText(ctx, c, width, height, t - c.start);
+            bytes = await canvasBytes(canvas);
+            shown = key;
+          }
+          await api.exportFrame(token, 199, i, bytes);
+          textDone += 1;
+          if (textDone % 5 === 0) setExp((e) => (e?.status === 'preparing' ? { ...e, progress: textDone / animatedFrames } : e));
+        }
+        textOverlays.push({ sequence: 199, start: spokenFrom, duration: spokenFrames / FPS });
+      }
 
       setExp({ status: 'preparing', progress: 0 });
-      await prerenderGpu(api, { width, height, fps: FPS, media: state.media, clips: state.clips }, token, {
+      await prerenderGpu(api, { width, height, fps: FPS, media: state.media, clips }, token, {
         isCancelled: () => exportCancelled.current,
         onProgress: (p) => setExp((e) => (e?.status === 'preparing' ? { ...e, progress: p } : e)),
       });
 
-      const base = { width, height, fps: FPS, media: state.media, clips: state.clips };
+      const base = { width, height, fps: FPS, media: state.media, clips };
       const filterItems = byLane.filter((c) => c.track === 'filter' && clipFilter(c, state.filters));
       const fxItems = byLane.filter((c) => c.track === 'fx' && clipEffect(c));
       let finalOverlays = [...overlays, ...textOverlays];
@@ -810,7 +1025,7 @@ export default function App() {
 
       if (exportCancelled.current) throw new Error('Export annulé');
       setExp({ status: 'running', progress: 0 });
-      await api.runExport({ ...base, overlays: finalOverlays, voice, normalize }, out, token);
+      await api.runExport({ ...base, overlays: finalOverlays, voice, normalize, encode, range }, out, token);
       token = null;
       setExp({ status: 'done', out });
     } catch (err) {
@@ -849,6 +1064,9 @@ export default function App() {
           </span>
         </div>
         <div className="topbar-actions">
+          <button className="btn ghost" onClick={() => setTemplatesOpen(true)} title="Repartir d'un modèle : format, style des sous-titres, intro">
+            Modèles
+          </button>
           <button
             className={`btn ghost ${aiStatus.enabled ? 'active' : ''}`}
             onClick={() => setAiPanelOpen(true)}
@@ -865,7 +1083,7 @@ export default function App() {
             <option value="1080p">1080p</option>
             <option value="1440p">2K (1440p)</option>
           </select>
-          <button className="btn primary" disabled={total <= 0} onClick={() => startExport()}>
+          <button className="btn primary" disabled={total <= 0} onClick={() => setExportOpen(true)}>
             Exporter
           </button>
         </div>
@@ -894,9 +1112,21 @@ export default function App() {
               onVoiceover={() => setVoiceOpen(true)}
             />
           )}
-          {leftTab === 'text' && <TextPanel time={time} dispatch={dispatch} onNotice={setNotice} />}
+          {leftTab === 'text' && <TextPanel time={time} total={total} dispatch={dispatch} onNotice={setNotice} />}
           {leftTab === 'captions' && (
-            <CaptionsPanel clips={state.clips} dispatch={dispatch} onOpenSubtitles={() => setSubtitlesOpen(true)} onNotice={setNotice} onTranslate={translateTexts} />
+            <CaptionsPanel
+              clips={state.clips}
+              media={state.media}
+              time={time}
+              captions={captions}
+              onCaptions={setCaptions}
+              onSeek={seek}
+              dispatch={dispatch}
+              onOpenSubtitles={() => setSubtitlesOpen('subtitles')}
+              onTranscribe={() => setSubtitlesOpen('transcript')}
+              onNotice={setNotice}
+              onTranslate={translateTexts}
+            />
           )}
           {leftTab === 'transitions' && (
             <TransitionsPanel clips={state.clips} selectedId={state.selectedId} time={time} dispatch={dispatch} onNotice={setNotice} />
@@ -993,7 +1223,14 @@ export default function App() {
           busy={busy}
           onReverse={reverseClip}
           onFreeze={freezeFrame}
-          ai={{ cutout: cutoutClip, silences: cutSilences, speak: speakText, busy: !!aiJob }}
+          ai={{
+            cutout: cutoutClip, silences: cutSilences, speak: speakText, reframe: reframeClip, clean: cleanVoice, beats: applyBeats,
+            reframeAll: () => reframeClips(state.clips.filter((c) => c.track === 'video' && laneOf(c) === 0)),
+            clearBeats: () => dispatch({ type: 'SET_MARKERS', markers: state.markers.filter((x) => !x.beat) }),
+            hasBeatMarkers: state.markers.some((x) => x.beat),
+            busy: !!aiJob || busy === 'clean' || busy === 'beats',
+            working: busy,
+          }}
         />
         )}
       </main>
@@ -1016,7 +1253,8 @@ export default function App() {
         onSeek={seek}
         pps={pps}
         setPps={setPps}
-        onOpenSubtitles={() => setSubtitlesOpen(true)}
+        onOpenSubtitles={() => setSubtitlesOpen('subtitles')}
+        onToggleMarker={() => toggleMarker(time)}
         onTrim={trimToPlayhead}
         peaks={peaks}
         onHover={setHoverTime}
@@ -1054,10 +1292,35 @@ export default function App() {
         }}
       />
       <SubtitlesModal
-        open={subtitlesOpen}
+        open={!!subtitlesOpen}
+        wordsOnly={subtitlesOpen === 'transcript'}
         canUseSelected={!!selectedClip && selectedClip.track !== 'text'}
-        onClose={() => setSubtitlesOpen(false)}
+        onClose={() => setSubtitlesOpen(null)}
         onRun={generateSubtitles}
+      />
+      <ExportDialog
+        open={exportOpen}
+        total={total}
+        zone={zone}
+        time={time}
+        ratio={ratio}
+        resolution={resolution}
+        shortSide={SHORT_SIDE}
+        onRatio={setRatio}
+        onResolution={setResolution}
+        onClose={() => setExportOpen(false)}
+        onExport={(options) => {
+          setExportOpen(false);
+          startExport(undefined, options);
+        }}
+      />
+      <TemplatesModal
+        open={templatesOpen}
+        selectedCount={selectionOf(state).length}
+        onClose={() => setTemplatesOpen(false)}
+        onSave={saveTemplate}
+        onUse={applyTemplate}
+        onError={showError}
       />
 
       <ExportModal

@@ -1,3 +1,5 @@
+import { drawShape, shapeSize } from './stickers.js';
+
 export const FONTS = [
   'Segoe UI', 'Arial', 'Arial Black', 'Impact', 'Georgia', 'Verdana', 'Trebuchet MS', 'Comic Sans MS', 'Consolas',
   'Times New Roman', 'Palatino Linotype', 'Segoe Print', 'Segoe Script', 'Lucida Console', 'Bahnschrift', 'Franklin Gothic Medium',
@@ -75,7 +77,29 @@ export const TEXT_ANIMS_LOOP = [
 
 export const DEFAULT_TEXT_ANIM = { in: 'none', out: 'none', loop: 'none', duration: 0.5 };
 export const textAnim = (c) => ({ ...DEFAULT_TEXT_ANIM, ...(c.anim || {}) });
+// The spoken word stands out in a subtitle whose words have their times.
+export const KARAOKE_MODES = [
+  ['color', 'Le mot change de couleur'],
+  ['box', 'Le mot sur un fond coloré'],
+  ['pop', 'Le mot grossit et change de couleur'],
+];
+const POP_TIME = 0.12;
+export const hasKaraoke = (c) => !!c.karaoke && (c.words?.length ?? 0) > 0;
+export function spokenWord(c, tau) {
+  if (!hasKaraoke(c) || tau == null) return -1;
+  let index = -1;
+  for (let i = 0; i < c.words.length && c.words[i].a <= tau; i++) index = i;
+  return index;
+}
+// What changes the picture of a subtitle between two moments: lets the export reuse identical frames.
+export function karaokeKey(c, tau) {
+  const i = spokenWord(c, tau);
+  const growing = c.karaoke?.mode === 'pop' && i >= 0 && tau - c.words[i].a < POP_TIME;
+  return `${c.id}:${i}${growing ? `:${Math.round(tau * 1000)}` : ''}`;
+}
+
 export const isAnimated = (c) => {
+  if (c.sticker === 'progress' || hasKaraoke(c)) return true;
   const a = textAnim(c);
   return a.in !== 'none' || a.out !== 'none' || a.loop !== 'none';
 };
@@ -319,6 +343,11 @@ export function drawText(ctx, clip, W, H, tau = null) {
   ctx.translate((s.x + st.dx) * W, (s.y + st.dy) * H);
   ctx.rotate(((s.rotation + st.angle) * Math.PI) / 180);
   ctx.scale(st.scale, st.scale);
+  if (clip.sticker) {
+    drawShape(ctx, clip.sticker, s.color, px, W, tau == null || !clip.duration ? 0.5 : tau / clip.duration);
+    ctx.restore();
+    return;
+  }
   drawBubble(ctx, L);
   ctx.textBaseline = 'middle';
   ctx.lineJoin = 'round';
@@ -329,6 +358,31 @@ export function drawText(ctx, clip, W, H, tau = null) {
   // Typewriter: characters appear one by one across all lines.
   const total = lines.reduce((n, l) => n + l.length, 0);
   let budget = Math.round(total * st.typed);
+
+  // Where the spoken word is: its line, its left edge and its width.
+  let spoken = null;
+  const spokenIndex = spokenWord(clip, tau);
+  if (spokenIndex >= 0) {
+    let seen = 0;
+    lines.some((full, i) => {
+      for (const m of full.matchAll(/\S+/g)) {
+        if (seen++ !== spokenIndex) continue;
+        const lx = s.align === 'left' ? ax : s.align === 'right' ? ax - widths[i] : -widths[i] / 2;
+        spoken = { word: m[0], x: lx + ctx.measureText(full.slice(0, m.index)).width, w: ctx.measureText(m[0]).width, y: -L.h / 2 + lineH * (i + 0.5) };
+        return true;
+      }
+      return false;
+    });
+  }
+  const accent = clip.karaoke?.color || '#ffe000';
+  if (spoken && clip.karaoke.mode === 'box') {
+    ctx.save();
+    ctx.fillStyle = accent;
+    ctx.beginPath();
+    ctx.roundRect(spoken.x - px * 0.14, spoken.y - lineH * 0.46, spoken.w + px * 0.28, lineH * 0.92, px * 0.14);
+    ctx.fill();
+    ctx.restore();
+  }
 
   lines.forEach((full, i) => {
     const line = full.slice(0, Math.max(0, budget));
@@ -426,6 +480,22 @@ export function drawText(ctx, clip, W, H, tau = null) {
     ctx.fillStyle = fill;
     ctx.fillText(line, ax, y);
   });
+  if (spoken && clip.karaoke.mode !== 'box') {
+    const age = tau - clip.words[spokenIndex].a;
+    const grow = clip.karaoke.mode === 'pop' ? 1 + 0.08 * Math.min(1, age / POP_TIME) : 1;
+    ctx.save();
+    ctx.translate(spoken.x + spoken.w / 2, spoken.y);
+    ctx.scale(grow, grow);
+    ctx.textAlign = 'center';
+    if (s.outline && s.outlineWidth > 0) {
+      ctx.lineWidth = Math.max(1.5, px * s.outlineWidth);
+      ctx.strokeStyle = s.outlineColor;
+      ctx.strokeText(spoken.word, 0, 0);
+    }
+    ctx.fillStyle = accent;
+    ctx.fillText(spoken.word, 0, 0);
+    ctx.restore();
+  }
   ctx.restore();
 }
 
@@ -433,6 +503,10 @@ export function drawText(ctx, clip, W, H, tau = null) {
 export function textBox(clip, W, H) {
   const ctx = document.createElement('canvas').getContext('2d');
   const L = layoutText(ctx, clip, W, H);
+  if (clip.sticker) {
+    const { w, h } = shapeSize(clip.sticker, L.px, W);
+    return { cx: L.s.x * W, cy: L.s.y * H, w, h: Math.max(h, L.px * 0.3), rotation: L.s.rotation };
+  }
   if (L.s.bubble && L.s.bubble !== 'none') {
     // Around the bubble; the box stays centred on the text, so it covers the bubble's lower tail too.
     const b = bubbleSize(L);

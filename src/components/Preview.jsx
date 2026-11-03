@@ -14,6 +14,8 @@ import { effectEnvelope } from '../project.js';
 import { applyFilterItem, clipFilter } from '../filters.js';
 import { gpuEngine } from '../gpu/engine.js';
 import { clipDuck, duckGain } from '../ducking.js';
+import { drawMoved, hasMotion } from '../keyframes.js';
+import { drawReframed, hasReframe } from '../reframe.js';
 
 const layerCanvases = new Map();
 function layerContext(key) {
@@ -156,10 +158,16 @@ export default function Preview({
     // A main-track frame with its background (same constants and order as the export's backgroundChain):
     // blur = the picture zoomed past the frame, blurred and dimmed, under the fitted picture;
     // fill = the picture zoomed to cover the frame; color = a plain colour under the fitted picture.
-    const paintFrame = (c, clip, [src, w, h], css) => {
+    const paintFrame = (c, clip, [src, w, h], css, sourceAt) => {
       if (!w || !h) return;
       const bg = clipBackground(clip);
       const filter = (extra) => [extra, css].filter((f) => f && f !== 'none').join(' ') || 'none';
+      if (hasReframe(clip) && sourceAt != null) {
+        c.filter = filter('');
+        drawReframed(c, src, w, h, W, H, clip.reframe, sourceAt);
+        c.filter = 'none';
+        return;
+      }
       if (bg.mode === 'color') {
         c.fillStyle = bg.color;
         c.fillRect(0, 0, W, H);
@@ -220,7 +228,7 @@ export default function Preview({
         const graded = layerContext(`graded-${canvasKey}`);
         graded.fillStyle = '#000';
         graded.fillRect(0, 0, W, H);
-        paintFrame(graded, clip, source, base);
+        paintFrame(graded, clip, source, base, m.type === 'video' ? sourceTime(clip, t) : null);
         source = [gpuEngine(W, H, 'lut').renderLut(graded.canvas, look.id, look.data, look.size, look.amount), W, H];
         colorCss = 'none';
         painted = true;
@@ -232,14 +240,15 @@ export default function Preview({
           c.filter = filter || 'none';
           drawFit(c, ...source);
           c.filter = 'none';
-        } else paintFrame(c, clip, source, filter);
+        } else paintFrame(c, clip, source, filter, m.type === 'video' ? sourceTime(clip, t) : null);
       };
       // Each layer is rendered with its effect into its own canvas first, so transitions
       // can blend it like a plain frame.
       return (c) => {
         const off = layerContext(canvasKey);
         renderClipEffect(off, W, H, clipEffect(clip), t - clip.start, drawFrame);
-        c.drawImage(off.canvas, 0, 0);
+        if (hasMotion(clip)) drawMoved(c, off.canvas, W, H, clipTransform(clip, t - clip.start));
+        else c.drawImage(off.canvas, 0, 0);
       };
     }
 
@@ -262,7 +271,7 @@ export default function Preview({
       }
       if (!source) return;
       const [src, sw, sh] = source;
-      const box = overlayBox(c, m.width || sw, m.height || sh, W, H);
+      const box = overlayBox(c, m.width || sw, m.height || sh, W, H, t - c.start);
       let image = src;
       let crop = [0, 0, sw, sh];
       let css = cssFilter(c);
@@ -403,13 +412,13 @@ export default function Preview({
     const hit = clips
       .filter(movable)
       .sort((a, b) => order(b) - order(a))
-      .find((c) => hitTest(c, mediaOf(c), W, H, px, py));
+      .find((c) => hitTest(c, mediaOf(c), W, H, px, py, time - c.start));
     if (!hit || playing) {
       onTogglePlay();
       return;
     }
     dispatch({ type: 'SELECT', id: hit.id });
-    startTransformDrag(e, hit, 'move', rect, W, H, mediaOf(hit), dispatch);
+    startTransformDrag(e, hit, 'move', rect, W, H, mediaOf(hit), dispatch, time - hit.start);
   }
 
   // Full screen: the whole preview (picture and its control bar) fills the screen; Échap leaves.
@@ -458,7 +467,7 @@ export default function Preview({
         <div className="preview-frame" style={{ aspectRatio: `${W} / ${H}`, width: `min(100cqw, 100cqh * ${W / H})` }}>
           <canvas ref={canvasRef} width={W} height={H} onPointerDown={onCanvasDown} />
           {selected && !playing && (
-            <OverlayBox clip={selected} media={mediaOf(selected)} canvas={canvasRef.current} width={frameWidth} W={W} H={H} dispatch={dispatch} />
+            <OverlayBox clip={selected} media={mediaOf(selected)} canvas={canvasRef.current} width={frameWidth} W={W} H={H} dispatch={dispatch} tau={time - selected.start} />
           )}
           {clips.length === 0 && (
             <div className="preview-hint">

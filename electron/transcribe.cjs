@@ -7,6 +7,10 @@ const { ffmpegPath } = require('./media.cjs');
 const MODELS = ['onnx-community/whisper-base', 'onnx-community/whisper-small'];
 const LANGUAGES = ['auto', 'french', 'english', 'spanish', 'german', 'italian', 'portuguese', 'arabic'];
 const SAMPLE_RATE = 16000;
+// The _timestamped exports of these models also give the time of every word.
+const withWordTimes = (model) => `${model}_timestamped`;
+// A new segment after a long pause or the end of a sentence.
+const SEGMENT_PAUSE = 0.8;
 
 // Phrases Whisper tends to invent on silence or music.
 const HALLUCINATIONS = [/amara\.org/i, /sous-titr\w* (réalisés|par|fait)/i, /merci d'avoir regardé/i, /thanks? for watching/i];
@@ -20,7 +24,7 @@ async function getPipeline(model, cacheDir, onProgress) {
   transformers.env.allowLocalModels = false;
   if (!pipelines.has(model)) {
     const files = new Map();
-    const promise = transformers.pipeline('automatic-speech-recognition', model, {
+    const promise = transformers.pipeline('automatic-speech-recognition', withWordTimes(model), {
       dtype: 'q8',
       progress_callback: (p) => {
         if (!p.file || !(p.total > 0)) return;
@@ -82,19 +86,31 @@ async function transcribe({ items, model, language }, { cacheDir, onProgress, is
       task: 'transcribe',
       chunk_length_s: 30,
       stride_length_s: 5,
-      return_timestamps: true,
+      return_timestamps: 'word',
     });
     cancelled();
     const result = Array.isArray(out) ? out[0] : out;
     const clipEnd = item.start + item.duration;
+    let current = null;
+    const close = () => {
+      if (current && !HALLUCINATIONS.some((re) => re.test(current.text))) segments.push(current);
+      current = null;
+    };
     for (const chunk of result.chunks || []) {
-      const text = (chunk.text || '').trim();
+      const w = (chunk.text || '').trim();
       const [a, b] = chunk.timestamp || [];
-      if (!text || !Number.isFinite(a) || HALLUCINATIONS.some((re) => re.test(text))) continue;
+      if (!w || !Number.isFinite(a)) continue;
       const start = item.start + a / speed;
-      const end = Math.min(clipEnd, item.start + (Number.isFinite(b) ? b : a + 2) / speed);
-      if (end > start + 0.05) segments.push({ text, start, end });
+      const end = Math.min(clipEnd, item.start + (Number.isFinite(b) ? b : a + 0.3) / speed);
+      if (end <= start) continue;
+      if (current && start - current.end > SEGMENT_PAUSE) close();
+      current ??= { text: '', start, end, item: index, words: [] };
+      current.text = `${current.text} ${w}`.trim();
+      current.end = end;
+      current.words.push({ w, start, end, sourceStart: item.in + a, sourceEnd: item.in + (end - item.start) * speed });
+      if (/[.?!…]$/.test(w)) close();
     }
+    close();
   }
   onProgress({ phase: 'transcribe', index: items.length, count: items.length });
   return segments;

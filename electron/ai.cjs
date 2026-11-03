@@ -290,4 +290,106 @@ async function speak({ text, lang = 'fr', rate = 1 }, { cacheDir, out, onProgres
   return out;
 }
 
-module.exports = { removeBackground, findSpeech, translateTexts, speak, TRANSLATE_LANGS, TTS_LANGS, translationPlan };
+// Automatic reframing: where the main subject is, a few times per second. YOLOS tiny (Apache-2.0)
+// finds the people in each frame; the path follows the biggest one, aiming at the upper body.
+const TRACK_FPS = 2;
+const TRACK_WIDTH = 384;
+const TRACK_MIN_SCORE = 0.6;
+const MAX_PATH_POINTS = 60;
+
+function smooth(values, reach, pick) {
+  return values.map((_, i) => pick(values.slice(Math.max(0, i - reach), i + reach + 1)));
+}
+const median = (list) => [...list].sort((a, b) => a - b)[list.length >> 1];
+const mean = (list) => list.reduce((a, b) => a + b, 0) / list.length;
+
+// Keeps the points the path can't do without (Ramer-Douglas-Peucker).
+function simplify(points, tolerance) {
+  const far = (a, b) => {
+    let index = -1;
+    let dist = tolerance;
+    for (let i = a + 1; i < b; i++) {
+      const u = (points[i].t - points[a].t) / (points[b].t - points[a].t);
+      const d = Math.max(
+        Math.abs(points[i].x - (points[a].x + (points[b].x - points[a].x) * u)),
+        Math.abs(points[i].y - (points[a].y + (points[b].y - points[a].y) * u)),
+      );
+      if (d > dist) {
+        dist = d;
+        index = i;
+      }
+    }
+    return index;
+  };
+  const keep = new Set([0, points.length - 1]);
+  const stack = [[0, points.length - 1]];
+  while (stack.length) {
+    const [a, b] = stack.pop();
+    const i = far(a, b);
+    if (i < 0) continue;
+    keep.add(i);
+    stack.push([a, i], [i, b]);
+  }
+  return points.filter((_, i) => keep.has(i));
+}
+
+function subjectPath(samples) {
+  const found = samples.filter((s) => s.x != null);
+  if (!found.length) return [];
+  // A frame without anyone keeps the nearest known position.
+  let last = found[0];
+  const filled = samples.map((s) => (s.x != null ? (last = s) : { ...last, t: s.t }));
+  const steady = (key) => smooth(smooth(filled.map((s) => s[key]), 2, median), 2, mean);
+  const [xs, ys] = [steady('x'), steady('y')];
+  const path = filled.map((s, i) => ({ t: s.t, x: xs[i], y: ys[i] }));
+  if (path.length < 3) return path;
+  let tolerance = 0.012;
+  let kept = simplify(path, tolerance);
+  while (kept.length > MAX_PATH_POINTS) {
+    tolerance *= 1.5;
+    kept = simplify(path, tolerance);
+  }
+  return kept;
+}
+
+async function trackSubject({ file, start = 0, span, width, height }, { cacheDir, onProgress, isCancelled }) {
+  onProgress({ phase: 'model', progress: 0 });
+  const t = await lib(cacheDir);
+  const detect = await once('subject', () =>
+    t.pipeline('object-detection', 'Xenova/yolos-tiny', { dtype: 'q8', progress_callback: progressOf(onProgress) }),
+  );
+  const w = Math.min(TRACK_WIDTH, 2 * Math.round(width / 2));
+  const h = 2 * Math.round((w * height) / width / 2);
+  const frameBytes = w * h * 3;
+  const reader = spawn(ffmpegPath, ['-v', 'error', '-ss', start.toFixed(3), '-t', span.toFixed(3), '-i', file,
+    '-vf', `fps=${TRACK_FPS},scale=${w}:${h},format=rgb24`, '-f', 'rawvideo', '-'], { windowsHide: true });
+  const total = Math.max(1, Math.ceil(span * TRACK_FPS));
+  const samples = [];
+  let pending = Buffer.alloc(0);
+  try {
+    for await (const chunk of reader.stdout) {
+      pending = pending.length ? Buffer.concat([pending, chunk]) : chunk;
+      while (pending.length >= frameBytes) {
+        if (isCancelled()) throw new Error('Opération annulée');
+        const frame = pending.subarray(0, frameBytes);
+        pending = pending.subarray(frameBytes);
+        const image = new t.RawImage(new Uint8ClampedArray(frame), w, h, 3);
+        const people = (await detect(image, { threshold: TRACK_MIN_SCORE })).filter((d) => d.label === 'person');
+        const area = (d) => (d.box.xmax - d.box.xmin) * (d.box.ymax - d.box.ymin);
+        const main = people.sort((a, b) => area(b) - area(a))[0];
+        const time = start + samples.length / TRACK_FPS;
+        samples.push(
+          main
+            ? { t: time, x: (main.box.xmin + main.box.xmax) / 2 / w, y: (main.box.ymin + (main.box.ymax - main.box.ymin) * 0.3) / h }
+            : { t: time, x: null, y: null },
+        );
+        onProgress({ phase: 'work', progress: Math.min(1, samples.length / total) });
+      }
+    }
+  } finally {
+    reader.kill();
+  }
+  return subjectPath(samples);
+}
+
+module.exports = { trackSubject, removeBackground, findSpeech, translateTexts, speak, TRANSLATE_LANGS, TTS_LANGS, translationPlan };

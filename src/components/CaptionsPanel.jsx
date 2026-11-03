@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { TEXT_PRESETS, textStyle } from '../text.js';
+import { KARAOKE_MODES, TEXT_PRESETS, textStyle } from '../text.js';
+import TranscriptPanel from './TranscriptPanel.jsx';
 import SideMenu from './SideMenu.jsx';
 import { SampleTile } from './TextInspector.jsx';
 
@@ -13,14 +14,22 @@ const LANGS = [
   ['ar', 'Arabe'],
 ];
 
-export default function CaptionsPanel({ clips, dispatch, onOpenSubtitles, onNotice, onTranslate }) {
+export default function CaptionsPanel({ clips, media, time, captions, onCaptions, onSeek, dispatch, onOpenSubtitles, onTranscribe, onNotice, onTranslate }) {
   const [view, setView] = useState('auto');
   const [from, setFrom] = useState('fr');
   const [to, setTo] = useState('en');
   const [onlyAuto, setOnlyAuto] = useState(true);
   const auto = clips.filter((c) => c.track === 'text' && c.auto);
 
+  // Word by word: applies to the subtitles there are and to the ones generated next.
+  const karaoke = auto.find((c) => c.karaoke)?.karaoke ?? captions?.karaoke ?? null;
+  const setKaraoke = (next) => {
+    onCaptions({ ...captions, karaoke: next });
+    if (auto.length) dispatch({ type: 'REPLACE_CLIPS', clips: clips.map((c) => (c.track === 'text' && c.auto ? { ...c, karaoke: next ?? undefined } : c)) });
+  };
+
   const restyle = (preset) => {
+    onCaptions({ ...captions, style: preset.style });
     dispatch({
       type: 'REPLACE_CLIPS',
       clips: clips.map((c) => {
@@ -42,6 +51,7 @@ export default function CaptionsPanel({ clips, dispatch, onOpenSubtitles, onNoti
       <SideMenu
         items={[
           { id: 'auto', label: 'Automatiques', count: auto.length },
+          { id: 'transcript', label: 'Par le texte', title: 'Montage par le texte : supprime des mots pour couper la vidéo' },
           { id: 'styles', label: 'Styles', count: TEXT_PRESETS.length },
           { id: 'translate', label: 'Traduire' },
         ]}
@@ -58,6 +68,27 @@ export default function CaptionsPanel({ clips, dispatch, onOpenSubtitles, onNoti
             <button className="btn primary" onClick={onOpenSubtitles}>
               Générer les sous-titres
             </button>
+            <label className="field">
+              <span>Mot par mot</span>
+              <select
+                value={karaoke?.mode ?? 'none'}
+                onChange={(e) => setKaraoke(e.target.value === 'none' ? null : { mode: e.target.value, color: karaoke?.color ?? '#ffe000' })}
+              >
+                <option value="none">Désactivé</option>
+                {KARAOKE_MODES.map(([id, label]) => (
+                  <option key={id} value={id}>{label}</option>
+                ))}
+              </select>
+            </label>
+            {karaoke && (
+              <label className="field-row">
+                <span>Couleur du mot prononcé</span>
+                <input type="color" value={karaoke.color} onChange={(e) => setKaraoke({ ...karaoke, color: e.target.value })} />
+              </label>
+            )}
+            {karaoke && auto.some((c) => !c.words?.length) && (
+              <p className="hint">Certains sous-titres n’ont pas le temps de chaque mot : génère-les à nouveau pour les animer.</p>
+            )}
             {auto.length > 0 && (
               <>
                 <p className="muted">
@@ -69,6 +100,9 @@ export default function CaptionsPanel({ clips, dispatch, onOpenSubtitles, onNoti
               </>
             )}
           </div>
+        )}
+        {view === 'transcript' && (
+          <TranscriptPanel clips={clips} media={media} time={time} dispatch={dispatch} onSeek={onSeek} onTranscribe={onTranscribe} />
         )}
         {view === 'translate' && (
           <div className="captions-card">

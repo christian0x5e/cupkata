@@ -90,6 +90,26 @@ Pour déplacer ou raccourcir un clip, utilise `clip_move`, `clip_trim` ou `clips
 
 Les identifiants valides (effets, filtres, transitions, polices, styles de texte) sont donnés par `list_catalog`. Ne les devine pas.
 
+## Images clés
+
+Pour animer un clip, pose des images clés avec `clip_keyframe`, en temps de la timeline. Entre deux images clés, la valeur évolue en ligne droite.
+
+- **Propriétés** : `scale`, `x`, `y`, `rotation`, `opacity` pour la vidéo et les images, `volume` pour tout ce qui a du son.
+- **Piste principale** : ces valeurs déplacent toute l'image, fond compris, sur du noir. C'est le moyen de faire un zoom : `scale` de 1 à 1.3 sur la durée du clip.
+- **Lecture de l'état** : dans `clip.keyframes`, `t` est en secondes du fichier source, pour que l'animation suive l'image quand le clip est coupé ou accéléré. Temps sur la timeline = `start + (t - in) / speed`.
+- **Priorité** : une propriété animée ignore sa valeur fixe (`volume`, `transform`).
+
+## Outils de montage
+
+- **Marqueurs** : `marker_add` et `marker_remove`. Ils figurent dans `get_state` (`markers`).
+- **Montage par le texte** : `transcript_generate`, puis `transcript_get` donne les mots et `transcript_cut` coupe les mots `first` à `last`. Les indices changent après chaque coupe : relis `transcript_get`.
+- **Rythme** : `clip_beats` sur un clip qui a du son. `fit` termine chaque clip de la piste principale sur un temps fort, `split` coupe, `markers` marque.
+- **Recadrage** : `clip_reframe` suit la personne à l'écran sur un clip vidéo de la piste principale. Change d'abord le format avec `set_settings`.
+- **Son** : `clip_clean_voice` fait jouer au clip une copie nettoyée de son fichier. Un second appel remet l'original.
+- **Sous-titres mot par mot** : `captions_word_by_word`, après ou avant `subtitles_generate`.
+- **Formes et émojis** : `sticker_add`. Le clip créé se règle ensuite comme un texte avec `clip_update`.
+- **Export** : `export_start` accepte `preset` (voir `export_presets` dans `list_catalog`, le format du projet change alors) et `from`, `to` pour un extrait.
+
 ## Méthode conseillée
 
 1. Lis `get_state`. Si `recovery_pending` vaut `true`, demande à l'utilisateur s'il veut reprendre son montage, puis réponds avec `recovery_choose`. Tout le reste est refusé d'ici là.
@@ -134,6 +154,7 @@ Les identifiants valides (effets, filtres, transitions, polices, styles de texte
 
 - **Exécution** : les commandes passent une à la fois, dans l'ordre d'arrivée. Attends chaque réponse avant d'envoyer la suivante.
 - **Commandes longues** : `clip_cutout`, `clip_cut_silences`, `text_speak`, `texts_translate`, `subtitles_generate` et `music_generate` ne répondent qu'à la fin, parfois après plusieurs minutes, car un modèle peut être téléchargé la première fois. Prévois un long délai d'attente. `get_state` et `wait_idle` restent disponibles pendant ce temps.
+- **Longues aussi** : `transcript_generate`, `clip_beats`, `clip_reframe` et `clip_clean_voice`.
 - **Annulation** : `undo` et `redo` couvrent les clips, pas les réglages du projet ni les imports. `media_remove` n'est pas annulable.
 - **Fidélité** : l'aperçu et l'export utilisent les mêmes calculs. Une image de `/v1/frame` représente donc le rendu final, en 720p sur le petit côté.
 - **Fenêtre** : ne la laisse pas réduite pendant une capture d'image, car l'aperçu peut alors cesser de se dessiner.

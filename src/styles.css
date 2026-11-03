@@ -242,6 +242,13 @@ select, .btn {
 .tl-ruler { height: 26px; position: sticky; top: 0; z-index: 4; background: var(--panel); border-bottom: 1px solid var(--border); cursor: pointer; }
 /* Zone de lecture (Maj + glisser sur la règle, ou I / O) */
 .tl-zone { position: absolute; top: 0; height: 26px; background: rgba(255, 111, 145, 0.28); border-left: 2px solid var(--accent); border-right: 2px solid var(--accent); pointer-events: none; z-index: 5; }
+/* Marqueurs sur la règle */
+.tl-marker { position: absolute; top: 0; width: 0; height: 100%; border-left: 2px solid #ffc53d; cursor: pointer; z-index: 6; }
+.tl-marker::before { content: ''; position: absolute; left: -6px; top: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 8px solid #ffc53d; }
+.tl-marker.beat { border-left: 1px solid #5cd6ff; }
+.tl-marker.beat::before { left: -4px; border-left-width: 3px; border-right-width: 3px; border-top: 5px solid #5cd6ff; }
+.tl-marker-label { position: absolute; left: 6px; top: 9px; white-space: nowrap; font-size: 10px; color: #ffc53d; pointer-events: none; }
+.tl-marker-name { position: absolute; left: 6px; top: 2px; width: 120px; height: 20px; font-size: 11px; z-index: 7; }
 .tick { position: absolute; top: 0; height: 100%; border-left: 1px solid #3a404b; padding: 4px 0 0 4px; font-size: 10px; color: var(--muted); }
 .tl-track { position: relative; margin: 6px 0; }
 .tl-track.video { background: rgba(58, 77, 115, 0.12); }
@@ -300,6 +307,11 @@ select, .btn {
 .modal { width: 440px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
 .modal h2 { margin: 0 0 14px; font-size: 16px; }
 .muted { color: var(--muted); }
+.key-btn { padding: 0 3px; border: 0; background: none; color: var(--muted); font-size: 12px; line-height: 1; cursor: pointer; }
+.key-btn:hover:not(:disabled), .key-btn.animated { color: var(--text, #fff); }
+.key-btn.on { color: var(--accent-2); }
+.key-btn:disabled { opacity: 0.35; cursor: default; }
+.kf-mark { position: absolute; bottom: 3px; width: 7px; height: 7px; margin-left: -3.5px; background: #fff; border: 1px solid #000; transform: rotate(45deg); pointer-events: none; z-index: 2; }
 .ai-panel { width: 520px; }
 .ai-panel .ai-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; }
 .ai-panel code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -449,6 +461,32 @@ select, .btn {
 .text-grid .text-preset { padding: 4px; }
 .captions-card { margin: 12px; padding: 14px; border-radius: 10px; background: var(--panel-2); display: flex; flex-direction: column; gap: 10px; align-items: flex-start; line-height: 1.45; }
 .captions-card p { margin: 0; font-size: 12px; }
+/* Montage par le texte */
+.transcript { display: flex; flex-direction: column; min-height: 100%; }
+.tr-text { flex: 1; padding: 12px; font-size: 14px; line-height: 1.7; outline: none; user-select: none; cursor: text; }
+.tr-word { border-radius: 3px; padding: 1px 0; }
+.tr-word:hover { background: rgba(255, 255, 255, 0.08); }
+.tr-word.active { color: var(--accent); }
+.tr-word.picked { background: rgba(255, 111, 145, 0.35); }
+.tr-foot { padding: 8px 12px; border-top: 1px solid var(--border); }
+/* Bruitages */
+.sfx-wait { padding: 12px; }
+.sfx-group { margin: 12px 10px 6px; font-size: 12px; color: var(--muted); font-weight: 600; }
+.sfx-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; padding: 0 10px; }
+.sfx-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; background: var(--panel-2); font-size: 12px; cursor: grab; }
+.sfx-item:hover { outline: 1px solid var(--accent); }
+.sfx-item svg { width: 14px; height: 14px; flex: none; }
+.sfx-item span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sfx-item .btn { padding: 0 8px; }
+/* Export et modèles */
+.export-range { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.export-summary { display: flex; justify-content: space-between; align-items: baseline; padding: 10px 12px; border-radius: 8px; background: var(--panel-2); font-size: 13px; }
+.export-summary strong { font-size: 16px; }
+.template-list { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow: auto; margin-bottom: 14px; }
+.template-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; background: var(--panel-2); }
+.template-item > div { flex: 1; min-width: 0; }
+.template-item p { margin: 2px 0 0; font-size: 11px; }
+.template-new { padding-top: 12px; border-top: 1px solid var(--border); }
 
 /* ── Right panel tabs, CapCut-like: text tabs in a row, the active one in the accent colour ── */
 .insp-tabs:not(.small) { justify-content: flex-start; gap: 16px; border-bottom: 1px solid var(--border); margin: -4px -12px 0; padding: 0 12px; }

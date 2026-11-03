@@ -21,6 +21,25 @@ export function buildCaptions(segments, { maxWords = 7, maxChars = 42, minDurati
     }
     if (line.length) lines.push(line);
 
+    // With the time of every word, each subtitle starts and ends exactly on its words.
+    if (seg.words?.length === words.length) {
+      let at = 0;
+      for (const l of lines) {
+        const timed = seg.words.slice(at, at + l.length);
+        at += l.length;
+        const start = Math.max(timed[0].start, lastEnd);
+        const duration = Math.max(minDuration, timed[timed.length - 1].end - start);
+        captions.push({
+          text: l.join(' '),
+          start,
+          duration,
+          words: timed.map((w) => ({ w: w.w, a: Math.max(0, w.start - start), b: Math.max(0, w.end - start) })),
+        });
+        lastEnd = start + duration;
+      }
+      continue;
+    }
+
     const span = Math.max(0.1, seg.end - seg.start);
     let t = seg.start;
     for (const l of lines) {
@@ -36,7 +55,7 @@ export function buildCaptions(segments, { maxWords = 7, maxChars = 42, minDurati
 }
 
 // Replaces earlier auto-subtitles in the covered range and never overwrites hand-made texts.
-export function placeCaptions(clips, captions, style) {
+export function placeCaptions(clips, captions, style, karaoke = null) {
   if (!captions.length) return { clips, added: 0, skipped: 0 };
   const from = captions[0].start;
   const to = captions.reduce((m, c) => Math.max(m, c.start + c.duration), 0);
@@ -52,6 +71,8 @@ export function placeCaptions(clips, captions, style) {
     next.push({
       id: crypto.randomUUID(), mediaId: null, track: 'text', start: cap.start, in: 0, duration: cap.duration,
       text: cap.text, style: { ...style }, auto: true,
+      ...(cap.words ? { words: cap.words } : {}),
+      ...(karaoke ? { karaoke } : {}),
     });
     added += 1;
   }

@@ -19,6 +19,22 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
+## Modèles téléchargés à la demande
+
+Ces modèles ne sont pas livrés avec Cupkata : ils sont téléchargés une fois depuis Hugging Face, au premier usage.
+
+- **Whisper** (OpenAI, licence MIT), versions `onnx-community/whisper-base_timestamped` et `whisper-small_timestamped` :
+  transcription mot par mot, pour les sous-titres et le montage par le texte (`electron/transcribe.cjs`).
+- **YOLOS tiny** (hustvl, licence Apache-2.0), version `Xenova/yolos-tiny` : repérage des personnes pour le recadrage automatique
+  (`electron/ai.cjs`).
+
+## Méthodes publiées
+
+- Suivi du rythme (`electron/beats.cjs`) : code écrit pour Cupkata d'après D. Ellis, *Beat Tracking by Dynamic Programming* (2007).
+- Transitions : les formules de `src/transitions.js` reproduisent le résultat des transitions de FFmpeg (filtre `xfade`), appelé comme
+  programme externe à l'export.
+- Bruitages (`electron/sfx.cjs`) : synthétisés par Cupkata, sans aucun échantillon externe.
+
 ## pixi-filters — licence MIT
 
 - Source : https://github.com/pixijs/filters

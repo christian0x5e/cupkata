@@ -5,7 +5,7 @@ const os = require('os');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
 const { Readable } = require('stream');
-const { ffmpegPath, probe, computePeaks, monoFiles, buildExportArgs, planChunks, gpuJobs, ALL_EXT, VIDEO_EXT, IMAGE_EXT, AUDIO_EXT, MIME, ext } = require('./media.cjs');
+const { cleanVoiceFile, ffmpegPath, probe, computePeaks, monoFiles, buildExportArgs, planChunks, gpuJobs, ALL_EXT, VIDEO_EXT, IMAGE_EXT, AUDIO_EXT, MIME, ext } = require('./media.cjs');
 const { once } = require('events');
 const { sanitize, resolveMediaPath, toFileContent, writeAtomic } = require('./project.cjs');
 const { transcribe, MODELS, LANGUAGES } = require('./transcribe.cjs');
@@ -14,6 +14,8 @@ const { searchMusic, downloadMusic, generateMusic, musicPage, downloadTo } = req
 const ai = require('./ai.cjs');
 const { scanLibrary, isListed } = require('./library.cjs');
 const { createControl } = require('./control.cjs');
+const { findBeats } = require('./beats.cjs');
+const { ensureSounds } = require('./sfx.cjs');
 
 // Lets a test instance run with its own data folder, so it never touches the user's autosave.
 if (process.env.CUPKATA_USER_DATA) app.setPath('userData', process.env.CUPKATA_USER_DATA);
@@ -101,7 +103,7 @@ async function loadProject(raw, baseDir) {
     let item = null;
     if (found) {
       try {
-        item = { ...(await probeOne(found)), id: m.id };
+        item = { ...(await probeOne(found)), id: m.id, words: m.words };
       } catch {
         item = null;
       }
@@ -323,6 +325,77 @@ ipcMain.handle('media:reverse', async (_e, filePath, start, span) => {
   }
 });
 
+// Voice cleaning: the clip plays a copy of its file, so the preview and the export hear the same
+// thing. One copy per source file, reused for all of its clips.
+ipcMain.handle('media:clean-voice', async (_e, filePath) => {
+  if (!isAllowed(filePath)) throw new Error('Média introuvable');
+  const info = await probe(filePath, thumbDir);
+  if (!info.hasAudio) throw new Error("Ce média n'a pas de son");
+  const source = path.parse(filePath);
+  const stat = await fs.promises.stat(filePath);
+  const key = crypto.createHash('sha1').update(`${filePath}|${stat.size}|${stat.mtimeMs}`).digest('hex').slice(0, 8);
+  const isVideo = info.type === 'video';
+  const extension = isVideo ? source.ext.slice(1) : 'm4a';
+  const out = path.join(await madeDir('Voix nettoyées'), `${source.name} net ${key}.${extension}`);
+  if (!fs.existsSync(out)) {
+    const work = `${out}.tmp.${extension}`;
+    try {
+      await cleanVoiceFile(filePath, work, isVideo);
+      await fs.promises.rename(work, out);
+    } finally {
+      fs.promises.rm(work, { force: true }).catch(() => {});
+    }
+  }
+  return probeOne(out);
+});
+
+// The beats of a piece of music, in seconds of its file.
+ipcMain.handle('media:beats', (_e, filePath, start, duration) => {
+  if (!isAllowed(filePath) || ![start, duration].every(Number.isFinite) || start < 0 || duration <= 0) throw new Error('Média introuvable');
+  return findBeats({ file: filePath, start, span: duration });
+});
+
+// The sound-effect library: written to disk the first time, then imported like any sound.
+let sfxList = null;
+ipcMain.handle('sfx:list', async () => {
+  sfxList ??= (async () => {
+    const sounds = await ensureSounds(await madeDir('Bruitages'));
+    const items = [];
+    for (const s of sounds) items.push({ id: s.id, name: s.name, group: s.group, item: await probeOne(s.file) });
+    return items;
+  })();
+  sfxList.catch(() => {
+    sfxList = null;
+  });
+  return sfxList;
+});
+
+// Project templates: a list kept with the app's settings, available to every new project.
+const templatesFile = () => path.join(app.getPath('userData'), 'templates.json');
+const readTemplates = async () => {
+  try {
+    const list = JSON.parse(await fs.promises.readFile(templatesFile(), 'utf8'));
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+};
+ipcMain.handle('templates:list', readTemplates);
+ipcMain.handle('templates:save', async (_e, template) => {
+  const name = String(template?.name || '').trim().slice(0, 60);
+  if (!name) throw new Error('Donne un nom à ce modèle');
+  const clean = sanitize({ app: 'cupkata', media: template.media || [], clips: template.clips || [], settings: template.settings || {} });
+  const entry = { id: crypto.randomUUID(), name, settings: clean.settings, media: clean.media, clips: clean.clips };
+  const list = [...(await readTemplates()).filter((t) => t.name !== name), entry];
+  await writeAtomic(templatesFile(), JSON.stringify(list, null, 2));
+  return list;
+});
+ipcMain.handle('templates:delete', async (_e, id) => {
+  const list = (await readTemplates()).filter((t) => t.id !== id);
+  await writeAtomic(templatesFile(), JSON.stringify(list, null, 2));
+  return list;
+});
+
 // iTunes / Apple Music purchases downloaded on this PC (and any other folder the user picks).
 ipcMain.handle('library:scan', async (event, pick) => {
   let extra = null;
@@ -378,6 +451,13 @@ ipcMain.handle('ai:silences', (event, r) =>
   runAi(event, (ctx) => {
     if (!isAllowed(r?.path)) throw new Error('Média introuvable');
     return ai.findSpeech({ file: r.path, start: span(r.start), span: Math.max(0.1, span(r.span)), minSilence: Math.min(3, Math.max(0.2, Number(r.minSilence) || 0.5)) }, ctx);
+  }),
+);
+
+ipcMain.handle('ai:track', (event, r) =>
+  runAi(event, (ctx) => {
+    if (!isAllowed(r?.path) || !(r.width > 0 && r.height > 0)) throw new Error('Média introuvable');
+    return ai.trackSubject({ file: r.path, start: span(r.start), span: Math.max(0.1, span(r.span)), width: r.width, height: r.height }, ctx);
   }),
 );
 
@@ -549,8 +629,8 @@ ipcMain.handle('gpu:plan', (_e, project, token) => {
   if (!prerenderedByToken.has(token)) prerenderedByToken.set(token, new Map());
   return gpuJobs(withLuts(project, token), isAllowed).map((j) => {
     const jobId = crypto.randomBytes(8).toString('hex');
-    gpuState.set(jobId, { ...j, token, out: path.join(dir, `gpu-${j.k}.mkv`), frameSize: j.width * j.height * 4 });
-    return { jobId, frames: j.frames, width: j.width, height: j.height, fps: j.fps, tau0: j.tau0, effect: j.effect };
+    gpuState.set(jobId, { ...j, token, out: path.join(dir, `gpu-${j.k}.mkv`), frameSize: j.inWidth * j.inHeight * 4, outSize: j.width * j.height * 4 });
+    return { jobId, frames: j.frames, width: j.width, height: j.height, fps: j.fps, tau0: j.tau0, effect: j.effect, motion: j.motion };
   });
 });
 
@@ -566,7 +646,8 @@ ipcMain.handle('gpu:start', (_e, jobId) => {
   job.encoder = spawn(
     ffmpegPath,
     ['-v', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${job.width}x${job.height}`, '-r', String(job.fps), '-i', '-',
-      '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '10', '-pix_fmt', 'yuv420p', job.out],
+      // A transparent picture needs a codec that keeps its alpha channel.
+      ...(job.alpha ? ['-c:v', 'ffv1', '-pix_fmt', 'bgra'] : ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '10', '-pix_fmt', 'yuv420p']), job.out],
     { windowsHide: true },
   );
   job.decoder.stdout.on('data', (chunk) => {
@@ -595,7 +676,7 @@ ipcMain.handle('gpu:read', (_e, jobId) => {
 ipcMain.handle('gpu:write', async (_e, jobId, data) => {
   const job = gpuState.get(jobId);
   if (!job?.encoder) throw new Error('Traitement GPU inconnu');
-  if (!(data instanceof Uint8Array) || data.byteLength !== job.frameSize) throw new Error('Image GPU invalide');
+  if (!(data instanceof Uint8Array) || data.byteLength !== (job.outSize ?? job.frameSize)) throw new Error('Image GPU invalide');
   if (!job.encoder.stdin.write(Buffer.from(data.buffer, data.byteOffset, data.byteLength))) await once(job.encoder.stdin, 'drain');
 });
 

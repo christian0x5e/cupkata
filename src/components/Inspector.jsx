@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { clipAudio, clipBackground, clipColor, clipSpeed, clipTransform, isOverlay, MAX_SPEED, MIN_SPEED, laneOf, maxDuration, MAX_VOLUME, OVERLAY_TRANSFORM, overlaps, TRANSITIONS } from '../project.js';
 import { formatTime } from '../format.js';
+import { clearKeyframes, isAnimated, keyframeAt, removeKeyframe, setKeyframe, transformPatch, valueAt } from '../keyframes.js';
 import TextInspector from './TextInspector.jsx';
 import RepeatTools from './RepeatTools.jsx';
 import { clipEffect, DEFAULT_INTENSITY, EFFECTS } from '../effects.js';
@@ -55,6 +56,29 @@ function EffectInspector({ clip, dispatch, Slider, onOpenEffects }) {
 }
 
 const KIND = { video: 'Vidéo', image: 'Photo', audio: 'Audio' };
+
+// ◆ at the playhead: click to remove that keyframe. ◇: click to add one with the value shown.
+function KeyButton({ clip, prop, tau, value, dispatch }) {
+  const inside = tau >= 0 && tau < clip.duration;
+  const on = inside && !!keyframeAt(clip, prop, tau);
+  const toggle = (e) => {
+    e.preventDefault();
+    dispatch({ type: 'CHECKPOINT' });
+    dispatch({ type: 'UPDATE_CLIP', id: clip.id, patch: on ? removeKeyframe(clip, prop, tau) : setKeyframe(clip, prop, tau, value) });
+  };
+  return (
+    <button
+      type="button"
+      className={`key-btn ${on ? 'on' : isAnimated(clip, prop) ? 'animated' : ''}`}
+      disabled={!inside}
+      onClick={toggle}
+      title={inside ? (on ? 'Retirer cette image clé' : 'Ajouter une image clé à la tête de lecture') : 'Place la tête de lecture sur ce clip'}
+      aria-label={on ? 'Retirer cette image clé' : 'Ajouter une image clé'}
+    >
+      {on ? '◆' : '◇'}
+    </button>
+  );
+}
 
 function Slider({ label, value, min, max, step, format, onStart, onChange, onReset, disabled }) {
   return (
@@ -231,6 +255,8 @@ function BackgroundInspector({ clip, clips, dispatch }) {
 // Open-source AI tools that run on this computer.
 function AiTools({ clip, media, ai }) {
   const [minSilence, setMinSilence] = useState(0.5);
+  const [every, setEvery] = useState(1);
+  const followable = clip.track === 'video' && laneOf(clip) === 0 && media.type === 'video' && media.alpha !== true;
   const picture = clip.track === 'video' && (media.type === 'video' || media.type === 'image');
   const sound = media.hasAudio && media.type !== 'image';
   if (!picture && !sound) return null;
@@ -256,6 +282,52 @@ function AiTools({ clip, media, ai }) {
             <option value={2}>dès 2 s</option>
           </select>
         </div>
+      )}
+      {followable && (
+        <div className="ai-row">
+          <button className={`btn ai-btn ${clip.reframe?.length ? 'active' : ''}`} disabled={ai.busy} onClick={() => ai.reframe(clip)}
+            title="L'image remplit le format et suit la personne à l'écran, par exemple pour passer du 16:9 au 9:16 (modèle YOLOS, sur ton ordinateur)">
+            {clip.reframe?.length ? '↺ Retirer le recadrage' : '🎯 Recadrer sur le sujet'}
+          </button>
+          <button className="btn" disabled={ai.busy} onClick={ai.reframeAll} title="Recadrer tous les clips vidéo de la piste principale">
+            Tous
+          </button>
+        </div>
+      )}
+      {sound && (
+        <button className={`btn ai-btn ${clip.cleaned ? 'active' : ''}`} disabled={ai.busy} onClick={() => ai.clean(clip)}
+          title="Réduit le bruit de fond et égalise la voix. Une copie du fichier est créée : ton original ne change pas.">
+          {ai.working === 'clean' ? 'Nettoyage…' : clip.cleaned ? '↺ Remettre le son d’origine' : '🎙 Nettoyer la voix'}
+        </button>
+      )}
+      {clip.track === 'audio' && sound && (
+        <>
+          <h3>Rythme</h3>
+          <label className="field">
+            <span>Utiliser</span>
+            <select value={every} onChange={(e) => setEvery(Number(e.target.value))}>
+              <option value={1}>Chaque temps</option>
+              <option value={2}>Un temps sur 2</option>
+              <option value={4}>Un temps sur 4</option>
+              <option value={8}>Un temps sur 8</option>
+            </select>
+          </label>
+          <button className="btn ai-btn" disabled={ai.busy} onClick={() => ai.beats(clip, 'fit', every)}
+            title="Chaque clip de la piste principale se termine sur un temps fort de ce son">
+            {ai.working === 'beats' ? 'Écoute du rythme…' : '🥁 Caler les clips sur le rythme'}
+          </button>
+          <button className="btn" disabled={ai.busy} onClick={() => ai.beats(clip, 'split', every)} title="Coupe les clips de la piste principale sur les temps forts">
+            Couper la vidéo sur les temps
+          </button>
+          <button className="btn" disabled={ai.busy} onClick={() => ai.beats(clip, 'markers', every)} title="Pose un marqueur sur chaque temps fort">
+            Marquer les temps
+          </button>
+          {ai.hasBeatMarkers && (
+            <button className="btn ghost" onClick={ai.clearBeats}>
+              Retirer les marqueurs de rythme
+            </button>
+          )}
+        </>
       )}
       <p className="hint">
         {picture && 'Le détourage marche le mieux avec des personnes ; compte environ 15 s de calcul par seconde de vidéo. '}
@@ -308,10 +380,12 @@ function SpeedInspector({ clip, media, dispatch, busy, onReverse, onFreeze, canF
 }
 
 // Overlay clips (video lanes above the main track): where they sit in the picture.
-function OverlayInspector({ clip, dispatch }) {
-  const tf = clipTransform(clip);
+function OverlayInspector({ clip, dispatch, tau, main = false }) {
+  const tf = clipTransform(clip, tau);
+  const animated = ['scale', 'x', 'y', 'rotation', 'opacity'].filter((p) => isAnimated(clip, p));
+  const key = (prop) => <KeyButton clip={clip} prop={prop} tau={tau} value={tf[prop]} dispatch={dispatch} />;
   const checkpoint = () => dispatch({ type: 'CHECKPOINT' });
-  const set = (patch) => dispatch({ type: 'UPDATE_CLIP', id: clip.id, patch: { transform: { ...tf, ...patch } } });
+  const set = (patch) => dispatch({ type: 'UPDATE_CLIP', id: clip.id, patch: transformPatch(clip, tau, patch) });
   const reset = (patch) => {
     checkpoint();
     set(patch);
@@ -319,23 +393,36 @@ function OverlayInspector({ clip, dispatch }) {
   const pct = (v) => `${v} %`;
   return (
     <>
-      <h3>Incrustation</h3>
-      <p className="hint">Dans l'aperçu : glisse l'image pour la déplacer, tire un coin pour la taille, le point du haut pour la tourner.</p>
-      <Slider label="Taille" value={Math.round(tf.scale * 100)} min={5} max={400} step={1} format={pct}
+      <h3>{main ? 'Mouvement' : 'Incrustation'}</h3>
+      <p className="hint">{main ? 'Zoome ou déplace l’image dans le temps : ' : 'Dans l’aperçu : glisse l’image pour la déplacer, tire un coin pour la taille, le point du haut pour la tourner. Pour l’animer : '}place la tête de lecture, clique sur ◇, puis recommence à un autre moment avec une autre valeur.</p>
+      <Slider label={<>{key('scale')} Taille</>} value={Math.round(tf.scale * 100)} min={5} max={400} step={1} format={pct}
         onStart={checkpoint} onChange={(v) => set({ scale: v / 100 })} onReset={() => reset({ scale: 1 })} />
-      <Slider label="Position horizontale" value={Math.round(tf.x * 100)} min={-50} max={150} step={1} format={pct}
+      <Slider label={<>{key('x')} Position horizontale</>} value={Math.round(tf.x * 100)} min={-50} max={150} step={1} format={pct}
         onStart={checkpoint} onChange={(v) => set({ x: v / 100 })} onReset={() => reset({ x: 0.5 })} />
-      <Slider label="Position verticale" value={Math.round(tf.y * 100)} min={-50} max={150} step={1} format={pct}
+      <Slider label={<>{key('y')} Position verticale</>} value={Math.round(tf.y * 100)} min={-50} max={150} step={1} format={pct}
         onStart={checkpoint} onChange={(v) => set({ y: v / 100 })} onReset={() => reset({ y: 0.5 })} />
-      <Slider label="Rotation" value={Math.round(tf.rotation)} min={-180} max={180} step={1} format={(v) => `${v}°`}
+      <Slider label={<>{key('rotation')} Rotation</>} value={Math.round(tf.rotation)} min={-180} max={180} step={1} format={(v) => `${v}°`}
         onStart={checkpoint} onChange={(v) => set({ rotation: v })} onReset={() => reset({ rotation: 0 })} />
-      <Slider label="Opacité" value={Math.round(tf.opacity * 100)} min={0} max={100} step={1} format={pct}
+      <Slider label={<>{key('opacity')} Opacité</>} value={Math.round(tf.opacity * 100)} min={0} max={100} step={1} format={pct}
         onStart={checkpoint} onChange={(v) => set({ opacity: v / 100 })} onReset={() => reset({ opacity: 1 })} />
-      <div className="timing">
+      {animated.length > 0 && (
+        <button
+          className="btn"
+          onClick={() => {
+            checkpoint();
+            let next = clip;
+            for (const prop of animated) next = { ...next, ...clearKeyframes(next, prop) };
+            dispatch({ type: 'UPDATE_CLIP', id: clip.id, patch: { keyframes: next.keyframes } });
+          }}
+        >
+          Retirer les images clés
+        </button>
+      )}
+      {!main && <div className="timing">
         <button className="btn" onClick={() => reset({ x: 0.5, y: 0.5 })} title="Remettre au centre de l'image">Centrer</button>
         <button className="btn" onClick={() => reset({ x: 0.5, y: 0.5, scale: 1, rotation: 0 })} title="Prendre toute l'image">Plein cadre</button>
         <button className="btn" onClick={() => reset({ ...OVERLAY_TRANSFORM })} title="Taille et position de départ">Réinit.</button>
-      </div>
+      </div>}
     </>
   );
 }
@@ -678,15 +765,15 @@ export default function Inspector({
               Couper le son
             </label>
             <Slider
-              label="Volume"
-              value={Math.round(audio.volume * 100)}
+              label={<><KeyButton clip={clip} prop="volume" tau={time - clip.start} value={valueAt(clip, 'volume', time - clip.start, audio.volume)} dispatch={dispatch} /> Volume</>}
+              value={Math.round(valueAt(clip, 'volume', time - clip.start, audio.volume) * 100)}
               min={0}
               max={MAX_VOLUME * 100}
               step={1}
               format={(v) => `${v} %`}
               disabled={audio.muted}
               onStart={checkpoint}
-              onChange={(v) => update({ volume: v / 100 })}
+              onChange={(v) => update(isAnimated(clip, 'volume') ? setKeyframe(clip, 'volume', time - clip.start, v / 100) : { volume: v / 100 })}
               onReset={() => commit({ volume: 1 })}
             />
             <Slider
@@ -748,7 +835,8 @@ export default function Inspector({
         ) : (
           <p className="hint">Ce média n'a pas de son.</p>
         )}
-        {isOverlay(clip) && <OverlayInspector clip={clip} dispatch={dispatch} />}
+        {isOverlay(clip) && <OverlayInspector clip={clip} dispatch={dispatch} tau={time - clip.start} />}
+        {clip.track === 'video' && !isOverlay(clip) && <OverlayInspector clip={clip} dispatch={dispatch} tau={time - clip.start} main />}
         {clip.track === 'video' && !isOverlay(clip) && <BackgroundInspector clip={clip} clips={clips} dispatch={dispatch} />}
         {clip.track === 'video' && <FilterInspector clip={clip} custom={customFilters} dispatch={dispatch} onOpenFilters={onOpenFilters} />}
         {clip.track === 'video' && !isOverlay(clip) && <EffectInspector clip={clip} dispatch={dispatch} Slider={Slider} onOpenEffects={onOpenEffects} />}
