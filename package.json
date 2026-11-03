@@ -8,7 +8,8 @@
     "dev": "concurrently -k -n vite,app \"vite\" \"wait-on tcp:5173 && cross-env CUPKATA_DEV=1 electron .\"",
     "build": "vite build",
     "start": "vite build && electron .",
-    "dist": "vite build && electron-builder --win nsis"
+    "dist": "vite build && electron-builder --win nsis",
+    "test": "vitest run"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.8.1",
@@ -24,6 +25,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "vite": "^5.4.11",
+    "vitest": "^2.1.9",
     "wait-on": "^8.0.1"
   },
   "allowScripts": {

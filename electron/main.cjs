@@ -16,9 +16,14 @@ const { scanLibrary, isListed } = require('./library.cjs');
 const { createControl } = require('./control.cjs');
 const { findBeats } = require('./beats.cjs');
 const { ensureSounds } = require('./sfx.cjs');
+const { keepBackup, isBackupDue } = require('./backups.cjs');
 
 // Lets a test instance run with its own data folder, so it never touches the user's autosave.
 if (process.env.CUPKATA_USER_DATA) app.setPath('userData', process.env.CUPKATA_USER_DATA);
+
+// One Cupkata per data folder: a second one would overwrite the first one's autosave.
+const isPrimary = app.requestSingleInstanceLock();
+if (!isPrimary) app.quit();
 
 // An unexpected error in a background task (network, files…) is written to crash.log instead of
 // stopping everything behind an error box; the feature that failed reports its own message.
@@ -116,6 +121,8 @@ async function loadProject(raw, baseDir) {
 const stripBom = (text) => text.replace(/^﻿/, '');
 const PROJECT_FILTER =[{ name: 'Projet Cupkata', extensions: ['cupkata'] }];
 const autosavePath = () => path.join(app.getPath('userData'), 'autosave.json');
+const backupsDir = () => path.join(app.getPath('userData'), 'backups');
+let lastBackupAt = 0;
 const dirtyWindows = new Set();
 
 let exportProc = null;
@@ -131,6 +138,9 @@ ipcMain.handle('project:save', async (event, data, filePath) => {
     if (res.canceled) return null;
     target = res.filePath;
   }
+  // The version about to be replaced stays available in the backups.
+  const previous = await fs.promises.readFile(target, 'utf8').catch(() => null);
+  if (previous) await keepBackup(backupsDir(), path.basename(target, '.cupkata'), previous).catch(() => {});
   await writeAtomic(target, toFileContent(data, target));
   return target;
 });
@@ -144,6 +154,26 @@ ipcMain.handle('project:open', async (event) => {
   if (res.canceled) return null;
   return readProjectFile(res.filePaths[0]);
 });
+
+// A backup opens as a new, unsaved project, so saving never writes into the backups folder.
+ipcMain.handle('project:open-backup', async (event) => {
+  await fs.promises.mkdir(backupsDir(), { recursive: true });
+  const res = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), {
+    title: 'Restaurer une sauvegarde',
+    defaultPath: backupsDir(),
+    properties: ['openFile'],
+    filters: PROJECT_FILTER,
+  });
+  if (res.canceled) return null;
+  return { ...(await readProjectFile(res.filePaths[0])), filePath: null };
+});
+
+// From the main process: a reload asked by the page counts as a navigation, which is blocked.
+ipcMain.handle('app:restart-interface', (event) => event.sender.reload());
+
+ipcMain.handle('app:log-error', (_e, text) =>
+  fs.promises.appendFile(path.join(app.getPath('userData'), 'crash.log'), `${new Date().toISOString()} interface : ${String(text).slice(0, 8000)}\n`),
+);
 
 async function readProjectFile(filePath) {
   let raw;
@@ -162,6 +192,12 @@ ipcMain.handle('project:autosave', async (_e, payload) => {
     project: JSON.parse(toFileContent(payload?.project || {}, payload?.filePath || null)),
   });
   await writeAtomic(autosavePath(), content);
+  const project = payload?.project;
+  if ((project?.media?.length || project?.clips?.length) && isBackupDue(lastBackupAt)) {
+    lastBackupAt = Date.now();
+    const name = typeof payload.filePath === 'string' ? path.basename(payload.filePath, '.cupkata') : 'Sans titre';
+    await keepBackup(backupsDir(), name, toFileContent(project, null)).catch(() => {});
+  }
 });
 
 ipcMain.handle('project:recover', async () => {
@@ -978,7 +1014,14 @@ function createWindow() {
   else win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
 }
 
+app.on('second-instance', () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.focus();
+});
+
 app.whenReady().then(() => {
+  if (!isPrimary) return;
   protocol.handle(SCHEME, serveFile);
   control.cleanup();
   createWindow();
@@ -991,4 +1034,5 @@ app.on('window-all-closed', () => {
   app.quit();
 });
 
-app.on('will-quit', () => control.cleanup());
+// A refused second instance must not remove the discovery file of the running one.
+app.on('will-quit', () => isPrimary && control.cleanup());

@@ -81,6 +81,7 @@ async function probe(filePath, thumbDir) {
     duration,
     width: v?.width || 0,
     height: v?.height || 0,
+    colorSpace: v?.color_space && v.color_space !== 'unknown' ? v.color_space : null,
     hasAudio: streams.some((s) => s.codec_type === 'audio'),
     // A WebM with an alpha channel (e.g. a clip whose background was removed).
     alpha:
@@ -259,6 +260,19 @@ function reframeCrop(points, W, H, src) {
   return `scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}:x='${x}':y='${y}'`;
 }
 
+// Inside the export every picture uses BT.601 numbers: that is what FFmpeg applies by itself when
+// images, overlays and GPU frames go from RGB to YUV. Only video sources in another space need
+// converting on the way in, and the finished picture is converted once, on the way out.
+function toWorkingColor(m) {
+  if (m.type !== 'video') return '';
+  if (m.colorSpace === 'smpte170m' || m.colorSpace === 'bt470bg') return '';
+  // An untagged file is read as players read it: BT.709 in HD, BT.601 in standard definition.
+  if (!m.colorSpace && m.height <= 576) return '';
+  return `scale=in_color_matrix=${m.colorSpace ? 'auto' : 'bt709'}:out_color_matrix=bt601:out_range=tv:flags=accurate_rnd+full_chroma_int,setparams=colorspace=smpte170m,`;
+}
+const TO_DELIVERY_COLOR = 'scale=in_color_matrix=bt601:out_color_matrix=bt709:in_range=tv:out_range=tv:flags=accurate_rnd+full_chroma_int,format=yuv420p';
+const COLOR_TAGS = ['-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv'];
+
 function backgroundChain(c, k, W, H, fps, alpha = false, src = null) {
   const B = BACKGROUND;
   const bg = c.background || {};
@@ -389,7 +403,7 @@ function planExport(project, isAllowed = () => true) {
     // Clone-padding keeps the segment exactly L long even when the source has no picture left to borrow.
     const pre = s.startPad > 1e-3 ? `,tpad=start_mode=clone:start_duration=${n(s.startPad)}` : '';
     s.pictureChain =
-      `${backgroundChain(c, k, W, H, fps, m.alpha === true, m.type === 'video' ? s.src : null)}${colorFilter(c)}${lutFilter(c, k, project.lutFiles)},format=yuv420p,setpts=(PTS-STARTPTS)/${s.speed}${pre},` +
+      `${toWorkingColor(m)}${backgroundChain(c, k, W, H, fps, m.alpha === true, m.type === 'video' ? s.src : null)}${colorFilter(c)}${lutFilter(c, k, project.lutFiles)},format=yuv420p,setpts=(PTS-STARTPTS)/${s.speed}${pre},` +
       `tpad=stop_mode=clone:stop_duration=${n(s.L)},${regrid(s.L)}`;
     s.gpu = GPU_IDS.includes(c.effect?.type);
     s.motion = hasMotion(c);
@@ -425,7 +439,7 @@ function overlayInput(c, m, fps) {
     : ['-ss', n(c.in), '-t', n(c.duration * speedOf(c, m)), ...alphaDecoder(m), '-i', m.path];
 }
 const overlayPicture = (c, m, fps, w, h, i, lutFiles) =>
-  `setpts=(PTS-STARTPTS)/${speedOf(c, m)},fps=${fps},scale=${w}:${h},setsar=1${colorFilter(c)}${lutFilter(c, `o${i}`, lutFiles)},format=rgba`;
+  `${toWorkingColor(m)}setpts=(PTS-STARTPTS)/${speedOf(c, m)},fps=${fps},scale=${w}:${h},setsar=1${colorFilter(c)}${lutFilter(c, `o${i}`, lutFiles)},format=rgba`;
 
 // Animated overlays are drawn in the renderer at their largest size, onto a transparent frame.
 function overlayMotionJobs(project, overlayClips, getMedia, W, H, fps) {
@@ -612,7 +626,6 @@ function buildExportArgs(project, outPath, isAllowed = () => true, prerendered =
     }
   }
   if (!videoOnly) filters.push(`${parts.map((_, i) => `[a${firstLabel + i}]`).join('')}concat=n=${parts.length}:v=0:a=1[acat]`);
-  const joined = videoOut;
 
   if (range) {
     const args = [
@@ -686,10 +699,6 @@ function buildExportArgs(project, outPath, isAllowed = () => true, prerendered =
     }
     videoOut = `[vt${i}]`;
   });
-  if (videoOut !== joined) {
-    filters.push(`${videoOut}format=yuv420p[vout]`);
-    videoOut = '[vout]';
-  }
 
   if (videoOnly) {
     const args = [
@@ -701,6 +710,9 @@ function buildExportArgs(project, outPath, isAllowed = () => true, prerendered =
     ];
     return { args, total };
   }
+
+  filters.push(`${videoOut}${TO_DELIVERY_COLOR}[vout]`);
+  videoOut = '[vout]';
 
   const voice = cleanIntervals(project.voice);
   const mix = ['[acat]'];
@@ -747,7 +759,7 @@ function buildExportArgs(project, outPath, isAllowed = () => true, prerendered =
     '-filter_complex', filters.join(';'),
     '-map', videoOut, '-map', audioOut,
     ...part,
-    '-c:v', 'libx264', '-preset', 'veryfast', ...quality, '-pix_fmt', 'yuv420p',
+    '-c:v', 'libx264', '-preset', 'veryfast', ...quality, '-pix_fmt', 'yuv420p', ...COLOR_TAGS,
     '-c:a', 'aac', '-b:a', `${audioKbps}k`, '-movflags', '+faststart',
     outPath,
   ];

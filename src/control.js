@@ -213,9 +213,10 @@ export function createCommands(app, dispatchRaw) {
     return a.state.clips.find((c) => c.id === a.state.selectedId) ?? null;
   };
   const clipsChange = (action) => {
-    const before = app.current.state.clips;
+    const before = app.current.state;
     dispatch(action);
-    return { changed: app.current.state.clips !== before };
+    const after = app.current.state;
+    return { changed: after.clips !== before.clips || after.markers !== before.markers || after.filters !== before.filters };
   };
   // Runs one of App's tools; a failure it only shows as a notice becomes the command's error.
   const runTool = async (work) => {

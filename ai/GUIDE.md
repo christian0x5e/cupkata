@@ -155,7 +155,7 @@ Pour animer un clip, pose des images clés avec `clip_keyframe`, en temps de la 
 - **Exécution** : les commandes passent une à la fois, dans l'ordre d'arrivée. Attends chaque réponse avant d'envoyer la suivante.
 - **Commandes longues** : `clip_cutout`, `clip_cut_silences`, `text_speak`, `texts_translate`, `subtitles_generate` et `music_generate` ne répondent qu'à la fin, parfois après plusieurs minutes, car un modèle peut être téléchargé la première fois. Prévois un long délai d'attente. `get_state` et `wait_idle` restent disponibles pendant ce temps.
 - **Longues aussi** : `transcript_generate`, `clip_beats`, `clip_reframe` et `clip_clean_voice`.
-- **Annulation** : `undo` et `redo` couvrent les clips, pas les réglages du projet ni les imports. `media_remove` n'est pas annulable.
+- **Annulation** : `undo` et `redo` couvrent les clips, les marqueurs et les filtres importés, pas les réglages du projet ni les imports de médias. `media_remove` n'est pas annulable.
 - **Fidélité** : l'aperçu et l'export utilisent les mêmes calculs. Une image de `/v1/frame` représente donc le rendu final, en 720p sur le petit côté.
 - **Fenêtre** : ne la laisse pas réduite pendant une capture d'image, car l'aperçu peut alors cesser de se dessiner.
 - **Respect de l'utilisateur** : il voit tes actions et peut intervenir. Relis `get_state` avant une série de modifications si du temps a passé. Ne remplace pas ses fichiers sans son accord.

@@ -336,6 +336,16 @@ export default function App() {
     }
   }
 
+  async function openBackup() {
+    if (!(await confirmDiscard())) return;
+    try {
+      const p = await api.openBackup();
+      if (p) applyProject(p, false);
+    } catch (err) {
+      showError(err);
+    }
+  }
+
   async function saveProject(saveAs = false) {
     try {
       const target = await api.saveProject(serialize(), saveAs ? null : projectPath);
@@ -1053,6 +1063,9 @@ export default function App() {
             </button>
             <button className="btn ghost" onClick={openProject} title="Ouvrir un projet (Ctrl+O)">
               Ouvrir
+            </button>
+            <button className="btn ghost" onClick={openBackup} title="Rouvrir une version enregistrée automatiquement">
+              Sauvegardes
             </button>
             <button className="btn ghost" onClick={() => saveProject(false)} title="Enregistrer (Ctrl+S) — Ctrl+Maj+S pour enregistrer sous">
               Enregistrer

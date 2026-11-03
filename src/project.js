@@ -593,11 +593,20 @@ export function clipsForRange(clips, from, to) {
   return clips.filter((c) => c.start < to + RANGE_MARGIN && end(c) > from - RANGE_MARGIN);
 }
 
-// Markers a cut moved come back with its undo (other marker changes aren't part of the history).
-const markersBeforeCut = new WeakMap();
+// One step of the undo history: everything Ctrl+Z brings back together.
+const snapshot = ({ clips, filters, markers }) => ({ clips, filters, markers });
+const remember = (state) => [...state.past.slice(-99), snapshot(state)];
+
+// Restores a history step; the selection survives only if its clip is still there.
+const restore = (state, step, history) => ({
+  ...state,
+  ...step,
+  ...history,
+  selectedId: step.clips.some((c) => c.id === state.selectedId) ? state.selectedId : null,
+});
 
 function commit(state, clips, extra = {}) {
-  return { ...state, ...extra, clips: compactLanes(clips), past: [...state.past.slice(-99), state.clips], future: [] };
+  return { ...state, ...extra, clips: compactLanes(clips), past: remember(state), future: [] };
 }
 
 // Changing the clip in Propriétés (or removing clips) ends a group selection, unless the action set
@@ -843,8 +852,11 @@ function applyAction(state, action) {
     case 'LOAD_PROJECT':
       return { ...initialState, media: action.media, clips: action.clips, filters: action.filters || [], markers: action.markers || [] };
 
-    case 'SET_MARKERS':
-      return { ...state, markers: [...action.markers].sort((a, b) => a.time - b.time) };
+    case 'SET_MARKERS': {
+      const markers = [...action.markers].sort((a, b) => a.time - b.time);
+      if (JSON.stringify(markers) === JSON.stringify(state.markers)) return state;
+      return { ...state, markers, past: remember(state), future: [] };
+    }
 
     // The transcribed words of a file, for the part of it that was just listened to.
     case 'SET_WORDS':
@@ -859,13 +871,12 @@ function applyAction(state, action) {
 
     case 'CUT_RANGES': {
       if (!action.ranges?.length) return state;
-      markersBeforeCut.set(state.clips, state.markers);
       return commit(state, cutRanges(state.clips, action.ranges), { markers: cutMarkers(state.markers, action.ranges) });
     }
 
 
     case 'ADD_FILTER':
-      return { ...state, filters: [...state.filters, action.filter] };
+      return { ...state, filters: [...state.filters, action.filter], past: remember(state), future: [] };
 
     // Removes a media file from the project, with the clips that use it. The undo history forgets
     // those clips too: undoing must never bring back a clip whose file is no longer in the project.
@@ -879,8 +890,8 @@ function applyAction(state, action) {
         media: state.media.filter((m) => m.id !== action.id),
         clips: compactLanes(keep(state.clips)),
         clipboard: keep(state.clipboard),
-        past: state.past.map(keep),
-        future: state.future.map(keep),
+        past: state.past.map((step) => ({ ...step, clips: keep(step.clips) })),
+        future: state.future.map((step) => ({ ...step, clips: keep(step.clips) })),
         selectedId: state.clips.some((c) => c.id === state.selectedId && c.mediaId === action.id) ? null : state.selectedId,
       };
     }
@@ -964,7 +975,7 @@ function applyAction(state, action) {
       return commit(state, action.clips, { selectedId: null });
 
     case 'CHECKPOINT':
-      return { ...state, past: [...state.past.slice(-99), state.clips], future: [] };
+      return { ...state, past: remember(state), future: [] };
 
     case 'UPDATE_CLIP':
       return { ...state, clips: state.clips.map((c) => (c.id === action.id ? { ...c, ...action.patch } : c)) };
@@ -1105,30 +1116,18 @@ function applyAction(state, action) {
 
     case 'UNDO': {
       if (!state.past.length) return state;
-      const before = markersBeforeCut.get(state.past[state.past.length - 1]);
-      if (before) markersBeforeCut.set(state.clips, state.markers);
-      return {
-        ...state,
-        ...(before ? { markers: before } : {}),
-        clips: state.past[state.past.length - 1],
+      return restore(state, state.past[state.past.length - 1], {
         past: state.past.slice(0, -1),
-        future: [state.clips, ...state.future],
-        selectedId: state.past[state.past.length - 1].some((c) => c.id === state.selectedId) ? state.selectedId : null,
-      };
+        future: [snapshot(state), ...state.future],
+      });
     }
 
     case 'REDO': {
       if (!state.future.length) return state;
-      const after = markersBeforeCut.get(state.future[0]);
-      if (after) markersBeforeCut.set(state.clips, state.markers);
-      return {
-        ...state,
-        ...(after ? { markers: after } : {}),
-        clips: state.future[0],
-        past: [...state.past, state.clips],
+      return restore(state, state.future[0], {
+        past: [...state.past, snapshot(state)],
         future: state.future.slice(1),
-        selectedId: state.future[0].some((c) => c.id === state.selectedId) ? state.selectedId : null,
-      };
+      });
     }
 
     default:
