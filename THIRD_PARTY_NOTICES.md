@@ -1,13 +1,13 @@
-# Crédits et licences tierces
+# Credits and third-party licenses
 
-Cupkata est écrit pour l'essentiel de zéro. Les éléments ci-dessous viennent de projets tiers ou s'en inspirent.
+Cupkata is mostly written from scratch. The items below come from, or are inspired by, third-party projects.
 
-## OpenCut — licence MIT
+## OpenCut — MIT License
 
-- Source : https://github.com/OpenCut-app/opencut-classic
-- Utilisé pour : la méthode de transcription locale avec Whisper via Transformers.js
-  (`electron/transcribe.cjs`) et le découpage des transcriptions en sous-titres (`src/captions.js`).
-  Le code a été adapté à l'architecture de Cupkata (processus principal Electron, extraction audio par FFmpeg).
+- Source: https://github.com/OpenCut-app/opencut-classic
+- Used for: the local transcription method with Whisper through Transformers.js
+  (`electron/transcribe.cjs`) and splitting transcripts into captions (`src/captions.js`).
+  The code was adapted to Cupkata's architecture (Electron main process, audio extraction with FFmpeg).
 
 ```
 Copyright 2025-2026 OpenCut
@@ -19,28 +19,27 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-## Modèles téléchargés à la demande
+## Models downloaded on demand
 
-Ces modèles ne sont pas livrés avec Cupkata : ils sont téléchargés une fois depuis Hugging Face, au premier usage.
+These models are not shipped with Cupkata: they are downloaded once from Hugging Face, on first use.
 
-- **Whisper** (OpenAI, licence MIT), versions `onnx-community/whisper-base_timestamped` et `whisper-small_timestamped` :
-  transcription mot par mot, pour les sous-titres et le montage par le texte (`electron/transcribe.cjs`).
-- **YOLOS tiny** (hustvl, licence Apache-2.0), version `Xenova/yolos-tiny` : repérage des personnes pour le recadrage automatique
+- **Whisper** (OpenAI, MIT License), `onnx-community/whisper-base_timestamped` and `whisper-small_timestamped`:
+  word-level transcription for captions and text-based editing (`electron/transcribe.cjs`).
+- **YOLOS tiny** (hustvl, Apache-2.0 License), `Xenova/yolos-tiny`: person detection for auto reframe
   (`electron/ai.cjs`).
 
-## Méthodes publiées
+## Published methods
 
-- Suivi du rythme (`electron/beats.cjs`) : code écrit pour Cupkata d'après D. Ellis, *Beat Tracking by Dynamic Programming* (2007).
-- Transitions : les formules de `src/transitions.js` reproduisent le résultat des transitions de FFmpeg (filtre `xfade`), appelé comme
-  programme externe à l'export.
-- Bruitages (`electron/sfx.cjs`) : synthétisés par Cupkata, sans aucun échantillon externe.
+- Beat tracking (`electron/beats.cjs`): code written for Cupkata after D. Ellis, *Beat Tracking by Dynamic Programming* (2007).
+- Transitions: the formulas in `src/transitions.js` reproduce the output of FFmpeg's transitions (`xfade` filter), which is
+  run as an external program during export.
 
-## pixi-filters — licence MIT
+## pixi-filters — MIT License
 
-- Source : https://github.com/pixijs/filters
-- Utilisé pour : l'approche de plusieurs effets GPU de `src/gpu/shaders.js` (Tourbillon d'après TwistFilter,
-  Onde de choc d'après ShockwaveFilter, Vieille télé d'après CRTFilter). Les shaders de Cupkata sont réécrits
-  pour son moteur WebGL (coordonnées, paramètres et animation propres).
+- Source: https://github.com/pixijs/filters
+- Used for: the approach of several GPU effects in `src/gpu/shaders.js` (Twirl after TwistFilter,
+  Shockwave after ShockwaveFilter, Old TV after CRTFilter). Cupkata's shaders are rewritten
+  for its own WebGL engine (its own coordinates, parameters and animation).
 
 ```
 The MIT License
@@ -66,63 +65,63 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-## Dépendances principales
+## Main dependencies
 
-| Composant | Licence | Rôle |
+| Component | License | Role |
 |---|---|---|
-| Lucide (`lucide-react`), https://lucide.dev | ISC | Toutes les icônes de l’interface |
-| Transformers.js (`@huggingface/transformers`) | Apache-2.0 | Exécute les modèles de reconnaissance vocale et de musique |
-| Whisper (OpenAI), versions ONNX de `onnx-community` | MIT | Modèle de reconnaissance vocale, téléchargé au premier usage |
-| MusicGen small (Meta), version ONNX `Xenova/musicgen-small` | CC BY-NC 4.0 (poids du modèle) | « Musique IA » : compose sur l'ordinateur, téléchargé au premier usage. Usage **non commercial** des musiques créées |
-| MODNet, version ONNX `Xenova/modnet` | Apache-2.0 | « Supprimer l'arrière-plan » (détourage des personnes), téléchargé au premier usage |
-| Silero VAD, version ONNX `onnx-community/silero-vad` | MIT | « Couper les silences » (détection de la parole), téléchargé au premier usage |
-| OPUS-MT (Helsinki-NLP), versions ONNX `Xenova/opus-mt-*` | Apache-2.0 | « Traduire » les textes et sous-titres, un modèle par paire de langues, téléchargé au premier usage |
-| MMS-TTS (Meta), versions ONNX `Xenova/mms-tts-*` | CC BY-NC 4.0 (poids du modèle) | Onglet « Voix » des textes (synthèse vocale). Usage **non commercial** des voix créées |
-| ONNX Runtime (`onnxruntime-node`) | MIT | Moteur d'exécution du modèle |
-| FFmpeg (`ffmpeg-static`, `ffprobe-static`) | GPL (binaires) | Analyse des médias et export vidéo |
-| Electron | MIT | Application de bureau |
-| React | MIT | Interface |
+| Lucide (`lucide-react`), https://lucide.dev | ISC | All interface icons |
+| Transformers.js (`@huggingface/transformers`) | Apache-2.0 | Runs the speech recognition and music models |
+| Whisper (OpenAI), ONNX versions from `onnx-community` | MIT | Speech recognition model, downloaded on first use |
+| MusicGen small (Meta), ONNX version `Xenova/musicgen-small` | CC BY-NC 4.0 (model weights) | "AI Music": composes on the computer, downloaded on first use. Generated music is for **non-commercial** use only |
+| MODNet, ONNX version `Xenova/modnet` | Apache-2.0 | "Remove background" (person cutout), downloaded on first use |
+| Silero VAD, ONNX version `onnx-community/silero-vad` | MIT | "Cut silences" (speech detection), downloaded on first use |
+| OPUS-MT (Helsinki-NLP), ONNX versions `Xenova/opus-mt-*` | Apache-2.0 | "Translate" texts and captions, one model per language pair, downloaded on first use |
+| MMS-TTS (Meta), ONNX versions `Xenova/mms-tts-*` | CC BY-NC 4.0 (model weights) | "Voice" tab of texts (text to speech). Generated voices are for **non-commercial** use only |
+| ONNX Runtime (`onnxruntime-node`) | MIT | Model runtime |
+| FFmpeg (`ffmpeg-static`, `ffprobe-static`) | GPL (binaries) | Media analysis and video export |
+| Electron | MIT | Desktop application |
+| React | MIT | User interface |
 
-Les textes complets de ces licences se trouvent dans `node_modules/<paquet>/LICENSE`.
+The full license texts are in `node_modules/<package>/LICENSE`.
 
-## FFmpeg — licence GPL v3
+## FFmpeg — GPL v3 License
 
-L'application installée contient les exécutables FFmpeg et FFprobe fournis par `ffmpeg-static` et `ffprobe-static`
-(FFmpeg 6.1.1, version « essentials » de https://www.gyan.dev, compilée avec `--enable-gpl --enable-version3`,
-dont x264, x265 et vidstab). Ces exécutables sont sous licence GNU GPL v3 ; Cupkata les lance comme des programmes
-séparés, son propre code reste sous licence MIT.
+The installed app contains the FFmpeg and FFprobe executables provided by `ffmpeg-static` and `ffprobe-static`
+(FFmpeg 6.1.1, "essentials" build from https://www.gyan.dev, built with `--enable-gpl --enable-version3`,
+including x264, x265 and vidstab). These executables are licensed under the GNU GPL v3; Cupkata runs them as
+separate programs, and its own code remains under the MIT License.
 
-- Code source de FFmpeg : https://github.com/FFmpeg/FFmpeg/commit/e38092ef93
-- Configuration de compilation et texte de la licence : `node_modules/ffmpeg-static/ffmpeg.exe.README`
-  et `ffmpeg.exe.LICENSE` (dans l'application installée : `resources\app.asar.unpacked\node_modules\ffmpeg-static`).
+- FFmpeg source code: https://github.com/FFmpeg/FFmpeg/commit/e38092ef93
+- Build configuration and license text: `node_modules/ffmpeg-static/ffmpeg.exe.README`
+  and `ffmpeg.exe.LICENSE` (in the installed app: `resources\app.asar.unpacked\node_modules\ffmpeg-static`).
 
-FFmpeg est une marque de Fabrice Bellard. Les formats H.264, H.265 et AAC peuvent être couverts par des brevets
-dans certains pays.
+FFmpeg is a trademark of Fabrice Bellard. The H.264, H.265 and AAC formats may be covered by patents
+in some countries.
 
-## Musiques libres (onglet Audio › Musique)
+## Free music (Audio › Music tab)
 
-Cupkata interroge les interfaces publiques de ces bibliothèques ; il n'y a aucune musique dans l'application.
-Chaque morceau garde sa propre licence Creative Commons, enregistrée dans un fichier « … - licence.txt »
-à côté du morceau téléchargé (`Documents\Cupkata\Musiques`).
+Cupkata queries the public APIs of these libraries; no music is shipped with the app.
+Each track keeps its own Creative Commons license, saved in a "… - licence.txt" file
+next to the downloaded track (`Documents\Cupkata\Musiques`).
 
-| Bibliothèque | Utilisation dans Cupkata |
+| Library | Use in Cupkata |
 |---|---|
-| Internet Archive (collection « netlabels ») — https://archive.org | Recherche et téléchargement |
-| ccMixter — https://ccmixter.org | Recherche ; le téléchargement se fait sur leur site (ils refusent les téléchargements par les applications) |
-| Openverse — https://openverse.org | Recherche et téléchargement, quand leur service répond |
+| Internet Archive ("netlabels" collection) — https://archive.org | Search and download |
+| ccMixter — https://ccmixter.org | Search; downloading happens on their website (they refuse downloads from apps) |
+| Openverse — https://openverse.org | Search and download, when their service responds |
 
-## Photos d'exemple (aperçus des transitions et des filtres)
+## Sample photos (transition and filter previews)
 
-`src/samples/day.jpg` et `src/samples/night.jpg` sont recadrées à partir de « Spruit Sunrise » et « Shanghai Bund »,
-de Greg Zaal, publiées sur Poly Haven (https://polyhaven.com) sous licence CC0.
+`src/samples/day.jpg` and `src/samples/night.jpg` are cropped from "Spruit Sunrise" and "Shanghai Bund"
+by Greg Zaal, published on Poly Haven (https://polyhaven.com) under the CC0 license.
 
-## Effets sonores (onglet Audio › Effets sonores)
+## Sound effects (Audio › Sound effects tab)
 
-Les sons de `shared/sounds` ont été générés avec Stable Audio 3 Small SFX. Le modèle n'est pas livré avec Cupkata.
+The sounds in `shared/sounds` were generated with Stable Audio 3 Small SFX. The model is not shipped with Cupkata.
 
 Powered by Stability AI.
 
 This Stability AI Model is licensed under the Stability AI Community License, Copyright © Stability AI Ltd. All Rights Reserved.
 
-Le texte de la licence est dans `shared/sounds/LICENSE-Stability-AI.md`. Son encodeur de texte T5Gemma relève des
+The license text is in `shared/sounds/LICENSE-Stability-AI.md`. Its T5Gemma text encoder falls under the
 Gemma Terms of Use (`shared/sounds/LICENSE-Gemma.md`).
