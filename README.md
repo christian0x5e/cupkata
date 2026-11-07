@@ -1,74 +1,73 @@
 # Cupkata
 
-Éditeur vidéo de bureau pour Windows, construit avec Electron, React et FFmpeg.
-L'interface est en anglais par défaut, en français au choix (Réglages).
+A desktop video editor for Windows, built with Electron, React and FFmpeg.
+The interface is in English by default, with French available in Settings.
 
 ![Cupkata](docs/capture.png)
 
-## Principe
+## Principle
 
-**L'aperçu est identique à l'export.** Chaque réglage visible dans la fenêtre est calculé par les mêmes formules
-que l'export FFmpeg, ou par le même shader grâce au moteur WebGL partagé (`src/gpu`).
-Quand un traitement ne peut pas être rejoué en direct (stabilisation, fond vert, nettoyage de voix, effets de voix),
-Cupkata crée une copie traitée du fichier : l'aperçu lit alors exactement ce que l'export utilisera.
+**The preview matches the export.** Every setting you see in the window is computed with the same formulas
+as the FFmpeg export, or with the same shader through the shared WebGL engine (`src/gpu`).
+When a process cannot be replayed live (stabilization, green screen, voice cleanup, voice effects),
+Cupkata creates a processed copy of the file, so the preview plays exactly what the export will use.
 
-## Fonctions
+## Features
 
-- **Montage** : timeline à pistes (vidéo, incrustations, audio, texte, effets, filtres), découpe, marqueurs, chapitres,
-  montage par le texte, rythme sur les temps de la musique, images clés avec courbes, rampes de vitesse.
-- **Image** : 132 filtres de couleur (tables LUT) et calques de réglage, une quarantaine d'effets (dont des effets GPU),
-  39 transitions, recadrage automatique, stabilisation, fond vert, formes, autocollants.
-- **Texte** : titres animés, sous-titres automatiques par Whisper en local, mot par mot.
-- **Son** : volume, fondus, ducking, formes d'onde, volume uniforme (loudnorm), nettoyage de voix, effets de voix,
-  56 effets sonores générés avec Stable Audio 3 Small SFX.
-- **Export** : H.264, H.265 et AV1, encodage NVENC avec repli sur le processeur, préréglages, format short, extrait.
-- **Projets** : sauvegarde automatique, copies de secours, modèles, proxys pour les gros fichiers.
-- **Pilotage par une IA** : API locale protégée par jeton, activée par le bouton **AI** (voir `ai/GUIDE.md`
-  et le serveur MCP `ai/cupkata-mcp.cjs`).
+- **Editing**: multi-track timeline (video, overlays, audio, text, effects, filters), cutting, markers, chapters,
+  text-based editing, beat sync to the music, keyframes with easing curves, speed ramps.
+- **Picture**: 132 color filters (LUTs) and adjustment layers, about forty effects (including GPU effects),
+  39 transitions, auto reframe, stabilization, green screen, shapes, stickers.
+- **Text**: animated titles, automatic captions with local Whisper, word by word.
+- **Audio**: volume, fades, ducking, waveforms, loudness normalization (loudnorm), voice cleanup, voice effects,
+  56 sound effects generated with Stable Audio 3 Small SFX.
+- **Export**: H.264, H.265 and AV1, NVENC encoding with CPU fallback, presets, short format, clip export.
+- **Projects**: autosave, backups, templates, proxies for large files.
+- **AI control**: local token-protected API, enabled with the **AI** button (see `ai/GUIDE.md`
+  and the MCP server `ai/cupkata-mcp.cjs`).
 
-## Installer
+## Install
 
-Téléchargez `Cupkata Setup` dans l'onglet **Releases** du dépôt. L'application n'est pas signée :
-Windows SmartScreen peut afficher « Windows a protégé votre ordinateur » ; cliquez sur **Informations
-complémentaires** puis **Exécuter quand même**.
+Download `Cupkata-Setup` from the **Releases** tab. The app is not code-signed, so Windows SmartScreen
+may show "Windows protected your PC"; click **More info**, then **Run anyway**.
 
-## Démarrer (depuis le code)
+## Run from source
 
-Prérequis : Windows, Node.js. FFmpeg et FFprobe sont fournis par `ffmpeg-static` et `ffprobe-static`.
+Requirements: Windows, Node.js. FFmpeg and FFprobe are provided by `ffmpeg-static` and `ffprobe-static`.
 
 ```sh
 npm install
-npm start        # compile l'interface puis ouvre l'application
-npm run dev      # mode développement avec rechargement (Vite + Electron)
-npm test         # tests Vitest, dont de vrais exports FFmpeg
-npm run dist     # installateur NSIS et version portable dans release/
+npm start        # builds the interface, then opens the app
+npm run dev      # development mode with hot reload (Vite + Electron)
+npm test         # Vitest tests, including real FFmpeg exports
+npm run dist     # NSIS installer and portable build in release/
 ```
 
-`Lancer Cupkata.bat` ouvre l'application sans passer par un terminal.
+`Lancer Cupkata.bat` opens the app without a terminal.
 
-## Organisation
+## Project layout
 
-| Dossier | Contenu |
+| Folder | Contents |
 | --- | --- |
-| `src/` | Interface React : timeline, panneaux, aperçu, effets, filtres, transitions, traductions (`i18n.js`). |
-| `src/gpu/` | Moteur WebGL partagé par l'aperçu et l'export. |
-| `electron/` | Processus principal : export FFmpeg (`media.cjs`), encodeurs, proxys, transcription, sauvegardes, API IA. |
-| `shared/` | Données communes aux deux côtés : effets, filtres, effets de voix, sons, dictionnaire anglais (`en.json`). |
-| `ai/` | Guide et serveur MCP pour piloter Cupkata depuis une IA. |
-| `tests/` | Tests Vitest. |
-| `build/`, `public/` | Icônes et fichiers statiques. |
+| `src/` | React interface: timeline, panels, preview, effects, filters, transitions, translations (`i18n.js`). |
+| `src/gpu/` | WebGL engine shared by the preview and the export. |
+| `electron/` | Main process: FFmpeg export (`media.cjs`), encoders, proxies, transcription, backups, AI API. |
+| `shared/` | Data used by both sides: effects, filters, voice effects, sounds, English dictionary (`en.json`). |
+| `ai/` | Guide and MCP server to control Cupkata from an AI (in French). |
+| `tests/` | Vitest tests. |
+| `build/`, `public/` | Icons and static files. |
 
-## Traductions
+## Translations
 
-Tout texte visible passe par `T('texte français', ...valeurs)`. Le français sert de clé, la traduction anglaise
-est dans `shared/en.json`, et `{0}`, `{1}`… marquent les valeurs. Un test vérifie que chaque texte a sa traduction.
+Every visible string goes through `T('French text', ...values)`. The French text is the key, the English
+translation lives in `shared/en.json`, and `{0}`, `{1}`… mark the values. A test checks that every string is translated.
 
-## Code tiers et licences
+## Third-party code and licenses
 
-Le code tiers est uniquement sous licence permissive (MIT, Apache, BSD, ISC) et crédité dans
-[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). Les effets sonores relèvent de la licence
-Stability AI Community (« Powered by Stability AI »). Les photos d'exemple viennent de Poly Haven (CC0).
+Third-party code is only under permissive licenses (MIT, Apache, BSD, ISC) and credited in
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). The sound effects fall under the Stability AI Community
+License ("Powered by Stability AI"). The sample photos come from Poly Haven (CC0).
 
-FFmpeg, livré avec l'application, est sous licence GPL v3 : voir la section FFmpeg de `THIRD_PARTY_NOTICES.md`.
+FFmpeg, bundled with the app, is licensed under the GPL v3: see the FFmpeg section of `THIRD_PARTY_NOTICES.md`.
 
-Cupkata est distribué sous licence MIT (voir [`LICENSE`](LICENSE)).
+Cupkata is released under the MIT License (see [`LICENSE`](LICENSE)).
