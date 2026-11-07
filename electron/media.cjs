@@ -1,3 +1,4 @@
+const { T } = require('./i18n.cjs');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -6,6 +7,7 @@ const { execFile, spawn } = require('child_process');
 
 const { effectFilter, mixer, saturate } = require('./effects.cjs');
 const DUCK = require('../shared/effects.json').duck;
+const VOICE_EFFECTS = require('../shared/voice-effects.json');
 const { finalArgs, intermediateArgs } = require('./encoders.cjs');
 const GPU_IDS = require('../shared/effects.json').gpu;
 const BACKGROUND = require('../shared/effects.json').background;
@@ -58,14 +60,14 @@ function run(bin, args) {
 
 async function probe(filePath, thumbDir) {
   const e = ext(filePath);
-  if (!ALL_EXT.includes(e)) throw new Error('Format non pris en charge');
+  if (!ALL_EXT.includes(e)) throw new Error(T('Format non pris en charge'));
   const out = await run(ffprobePath, ['-v', 'error', '-print_format', 'json', '-show_format', '-show_streams', filePath]);
   const info = JSON.parse(out);
   const streams = info.streams || [];
   const v = streams.find((s) => s.codec_type === 'video');
   const type = IMAGE_EXT.includes(e) ? 'image' : AUDIO_EXT.includes(e) || !v ? 'audio' : 'video';
   const duration = type === 'image' ? 0 : parseFloat(info.format?.duration) || 0;
-  if (type !== 'image' && !(duration > 0)) throw new Error('Durée illisible');
+  if (type !== 'image' && !(duration > 0)) throw new Error(T('Durée illisible'));
 
   let thumb = null;
   if (type === 'image') thumb = filePath;
@@ -158,6 +160,9 @@ const clampNum = (v, lo, hi, fallback) => (Number.isFinite(v) ? Math.min(hi, Mat
 const TRANSITION_IDS = [
   'fade', 'fadeblack', 'fadewhite', 'wipeleft', 'wiperight', 'wipeup', 'wipedown',
   'slideleft', 'slideright', 'slideup', 'slidedown', 'circleopen', 'zoomin', 'hblur',
+  'smoothleft', 'smoothright', 'smoothup', 'smoothdown', 'circleclose', 'radial', 'vertopen', 'vertclose', 'horzopen', 'horzclose',
+  'diagtl', 'diagtr', 'diagbl', 'diagbr', 'rectcrop', 'pixelize', 'squeezeh',
+  'coverleft', 'coverright', 'coverup', 'coverdown', 'revealleft', 'revealright', 'revealup', 'revealdown',
 ];
 
 // Colour filter: the same 3D table as the preview, written to a .cube file, blended by its amount.
@@ -337,7 +342,7 @@ function planExport(project, isAllowed = () => true) {
   const mediaById = new Map(project.media.map((m) => [m.id, m]));
   const getMedia = (c) => {
     const m = mediaById.get(c.mediaId);
-    if (!m || !isAllowed(m.path)) throw new Error('Média introuvable : ' + (m?.name || c.mediaId));
+    if (!m || !isAllowed(m.path)) throw new Error(T('Média introuvable :') + (m?.name || c.mediaId));
     return m;
   };
 
@@ -352,7 +357,7 @@ function planExport(project, isAllowed = () => true) {
     .filter((c) => c.track === 'audio' || (c.track === 'video' && lane(c) > 0 && getMedia(c).type === 'video'))
     .sort((a, b) => a.start - b.start);
   const total = project.clips.reduce((t, c) => Math.max(t, end(c)), 0);
-  if (!(total > 0)) throw new Error('La timeline est vide');
+  if (!(total > 0)) throw new Error(T('La timeline est vide'));
 
   // 1. Cut the video track into segments (clips and black gaps).
   const segs = [];
@@ -544,7 +549,7 @@ const graphPath = (p) => (p.includes("'") ? null : p.replace(/\\/g, '/').replace
 function buildExportArgs(project, outPath, isAllowed = () => true, prerendered = new Map(), opts = {}) {
   const { W, H, fps, total, segs, audioClips, overlayClips, getMedia, regrid } = planExport(project, isAllowed);
   // range: render just these segments (one block). chunks: use the rendered blocks instead of the segments.
-  const { videoOnly = false, baseVideo = null, fxRanges = [], range = null, chunks = null, mono = new Set(), encoder = 'libx264' } = opts;
+  const { videoOnly = false, baseVideo = null, fxRanges = [], range = null, chunks = null, mono = new Set(), encoder = 'libx264', finalEncoder = encoder } = opts;
   const inputs = [];
   const filters = [];
   let idx = 0;
@@ -769,7 +774,7 @@ function buildExportArgs(project, outPath, isAllowed = () => true, prerendered =
     '-filter_complex', filters.join(';'),
     '-map', videoOut, '-map', audioOut,
     ...part,
-    '-c:v', encoder, ...finalArgs(encoder, videoKbps), '-pix_fmt', 'yuv420p', ...COLOR_TAGS,
+    '-c:v', finalEncoder, ...finalArgs(finalEncoder, videoKbps), '-pix_fmt', 'yuv420p', ...COLOR_TAGS,
     '-c:a', 'aac', '-b:a', `${audioKbps}k`, '-movflags', '+faststart',
     outPath,
   ];
@@ -833,11 +838,24 @@ async function cleanVoiceFile(file, out, isVideo) {
   const chain = cleanChain(await noiseFloor(file));
   const measured = await measureLoudness(file, chain);
   const gain = measured == null ? 0 : Math.min(18, Math.max(-12, VOICE_LOUDNESS - measured));
+  return writeAudioCopy(file, out, isVideo, `${chain},volume=${gain.toFixed(2)}dB`);
+}
+
+// Voice effects work like the cleaning: a copy with the picture untouched, as loud and as long as the
+// source. Filters that shift the sound are put back in place in shared/voice-effects.json.
+async function voiceEffectFile(file, out, isVideo, effectId, duration) {
+  const { filter } = VOICE_EFFECTS.find((e) => e.id === effectId);
+  const [source, changed] = [await measureLoudness(file, 'anull'), await measureLoudness(file, filter)];
+  const gain = source == null || changed == null ? 0 : Math.min(18, Math.max(-12, source - changed));
+  return writeAudioCopy(file, out, isVideo, `${filter},volume=${gain.toFixed(2)}dB`, duration);
+}
+
+function writeAudioCopy(file, out, isVideo, af, length = 0) {
   const opus = path.extname(out).toLowerCase() === '.webm';
-  await new Promise((resolve, reject) => {
+  return new Promise((resolve, reject) => {
     const proc = spawn(ffmpegPath, [
       '-y', '-v', 'error', '-i', file, ...(isVideo ? ['-map', '0:v:0', '-c:v', 'copy'] : ['-vn']), '-map', '0:a:0',
-      '-af', `${chain},volume=${gain.toFixed(2)}dB,alimiter=limit=0.95:level=disabled:latency=1`, '-ar', '48000',
+      '-af', `${af},alimiter=limit=0.95:level=disabled:latency=1${length ? ',apad' : ''}`, ...(length ? ['-t', String(length)] : []), '-ar', '48000',
       ...(opus ? ['-c:a', 'libopus', '-b:a', '160k'] : ['-c:a', 'aac', '-b:a', '192k']), out,
     ], { windowsHide: true });
     let tail = '';
@@ -845,7 +863,7 @@ async function cleanVoiceFile(file, out, isVideo) {
       tail = (tail + d).slice(-2000);
     });
     proc.on('error', reject);
-    proc.on('close', (code) => (code === 0 ? resolve() : reject(new Error(tail.trim().split('\n').pop() || 'FFmpeg a échoué'))));
+    proc.on('close', (code) => (code === 0 ? resolve() : reject(new Error(tail.trim().split('\n').pop() || T('FFmpeg a échoué')))));
   });
 }
 
@@ -857,7 +875,7 @@ function runIn(cwd, args) {
       tail = (tail + d).slice(-2000);
     });
     proc.on('error', reject);
-    proc.on('close', (code) => (code === 0 ? resolve() : reject(new Error(tail.trim().split('\n').pop() || 'FFmpeg a échoué'))));
+    proc.on('close', (code) => (code === 0 ? resolve() : reject(new Error(tail.trim().split('\n').pop() || T('FFmpeg a échoué')))));
   });
 }
 
@@ -919,4 +937,4 @@ async function chromaKeyFile({ file, isImage, start = 0, span = 0, color, tolera
   return key;
 }
 
-module.exports = { stabilizeFile, chromaKeyFile, keyColorOf, cleanVoiceFile, ffmpegPath, ffprobePath, probe, computePeaks, monoFiles, buildExportArgs, planChunks, gpuJobs, ALL_EXT, VIDEO_EXT, IMAGE_EXT, AUDIO_EXT, MIME, ext };
+module.exports = { stabilizeFile, chromaKeyFile, keyColorOf, cleanVoiceFile, voiceEffectFile, VOICE_EFFECTS, ffmpegPath, ffprobePath, probe, computePeaks, monoFiles, buildExportArgs, planChunks, gpuJobs, ALL_EXT, VIDEO_EXT, IMAGE_EXT, AUDIO_EXT, MIME, ext };

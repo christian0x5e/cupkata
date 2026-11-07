@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { BUBBLES, drawText, FONTS, TEXT_ANIMS_IN, TEXT_ANIMS_LOOP, TEXT_ANIMS_OUT, TEXT_EFFECTS, TEXT_PRESETS, textAnim, textStyle } from '../text.js';
+import { AlignCenter, AlignLeft, AlignRight, ArrowDownLeft, ArrowDownRight, Volume2 } from './icons.jsx';
+import { DECIMAL, T } from '../i18n.js';
 
 // Where the "place" grid puts the text: 3 × 3 spots on the picture.
 const SPOTS = [0.15, 0.5, 0.85];
@@ -7,7 +9,7 @@ const PW = 112;
 const PH = 46;
 
 // Small sample drawn with the same code as the preview and the export (a style preset, a bubble, an effect…).
-export function SampleTile({ style, text = 'Texte', sticker, label, active, onApply, size = 320 }) {
+export function SampleTile({ style, text = T('Texte'), sticker, label, active, onApply, size = 320 }) {
   const ref = useRef(null);
   const key = JSON.stringify(style);
   useEffect(() => {
@@ -62,11 +64,11 @@ function ColorToggle({ label, on, color, onToggle, onColor, onStart }) {
 const ANIM_LISTS = { in: TEXT_ANIMS_IN, out: TEXT_ANIMS_OUT, loop: TEXT_ANIMS_LOOP };
 
 const VOICES = [
-  ['fr', 'Français'],
-  ['en', 'Anglais'],
-  ['es', 'Espagnol'],
-  ['de', 'Allemand'],
-  ['pt', 'Portugais'],
+  ['fr', T('Français')],
+  ['en', T('Anglais')],
+  ['es', T('Espagnol')],
+  ['de', T('Allemand')],
+  ['pt', T('Portugais')],
 ];
 let lastVoice = { lang: 'fr', rate: 1 };
 
@@ -100,14 +102,14 @@ export default function TextInspector({ clip, dispatch, Slider, onSpeak, aiBusy 
     return (
       <>
         <label className="field-row">
-          <span>Couleur</span>
+          <span>{T('Couleur')}</span>
           <input type="color" value={s.color} onPointerDown={checkpoint} onChange={(e) => setStyle({ color: e.target.value })} />
         </label>
-        <Slider label="Taille" value={s.size} min={20} max={400} step={1} format={(v) => `${v} px`}
+        <Slider label={T('Taille')} value={s.size} min={20} max={400} step={1} format={(v) => `${v} px`}
           onStart={checkpoint} onChange={(v) => setStyle({ size: v })} onReset={() => commitStyle({ size: 160 })} />
-        <Slider label="Rotation" value={s.rotation} min={-180} max={180} step={1} format={(v) => `${v}°`}
+        <Slider label={T('Rotation')} value={s.rotation} min={-180} max={180} step={1} format={(v) => `${v}°`}
           onStart={checkpoint} onChange={(v) => setStyle({ rotation: v })} onReset={() => commitStyle({ rotation: 0 })} />
-        <Slider label="Opacité" value={Math.round(s.opacity * 100)} min={0} max={100} step={1} format={(v) => `${v} %`}
+        <Slider label={T('Opacité')} value={Math.round(s.opacity * 100)} min={0} max={100} step={1} format={(v) => `${v} %`}
           onStart={checkpoint} onChange={(v) => setStyle({ opacity: v / 100 })} onReset={() => commitStyle({ opacity: 1 })} />
       </>
     );
@@ -120,19 +122,19 @@ export default function TextInspector({ clip, dispatch, Slider, onSpeak, aiBusy 
   const basic = (
     <>
       <label className="field">
-        <span>Texte</span>
+        <span>{T('Texte')}</span>
         <textarea
           rows={3}
           value={clip.text}
           maxLength={500}
-          placeholder="Écris ton texte ici"
+          placeholder={T('Écris ton texte ici')}
           onFocus={checkpoint}
           onChange={(e) => update({ text: e.target.value })}
         />
       </label>
-      <p className="hint">Dans l'aperçu : glisse le texte pour le placer où tu veux, tire un coin pour sa taille, le point du haut pour le tourner.</p>
+      <p className="hint">{T("Dans l'aperçu : glisse le texte pour le placer où tu veux, tire un coin pour sa taille, le point du haut pour le tourner.")}</p>
 
-      <h3>Styles</h3>
+      <h3>{T('Styles')}</h3>
       <div className="text-presets">
         {TEXT_PRESETS.map((p) => (
           <SampleTile
@@ -150,7 +152,7 @@ export default function TextInspector({ clip, dispatch, Slider, onSpeak, aiBusy 
         ))}
       </div>
 
-      <h3>Police</h3>
+      <h3>{T('Police')}</h3>
       <select value={s.font} onChange={(e) => commitStyle({ font: e.target.value })} style={{ fontFamily: s.font }}>
         {FONTS.map((f) => (
           <option key={f} value={f} style={{ fontFamily: f }}>
@@ -158,48 +160,48 @@ export default function TextInspector({ clip, dispatch, Slider, onSpeak, aiBusy 
           </option>
         ))}
       </select>
-      <Slider label="Taille" value={s.size} min={20} max={400} step={1} format={(v) => `${v} px`}
+      <Slider label={T('Taille')} value={s.size} min={20} max={400} step={1} format={(v) => `${v} px`}
         onStart={checkpoint} onChange={(v) => setStyle({ size: v })} onReset={() => commitStyle({ size: 72 })} />
       <div className="text-format">
-        <button className={`btn ${s.bold ? 'active' : ''}`} onClick={() => commitStyle({ bold: !s.bold })} title="Gras"><b>G</b></button>
-        <button className={`btn ${s.italic ? 'active' : ''}`} onClick={() => commitStyle({ italic: !s.italic })} title="Italique"><i>I</i></button>
-        <button className={`btn ${s.upper ? 'active' : ''}`} onClick={() => commitStyle({ upper: !s.upper })} title="Tout en majuscules">AA</button>
+        <button className={`btn ${s.bold ? 'active' : ''}`} onClick={() => commitStyle({ bold: !s.bold })} title={T('Gras')}><b>G</b></button>
+        <button className={`btn ${s.italic ? 'active' : ''}`} onClick={() => commitStyle({ italic: !s.italic })} title={T('Italique')}><i>I</i></button>
+        <button className={`btn ${s.upper ? 'active' : ''}`} onClick={() => commitStyle({ upper: !s.upper })} title={T('Tout en majuscules')}>{T('AA')}</button>
         <span className="text-format-sep" />
-        {[['left', '⇤'], ['center', '↔'], ['right', '⇥']].map(([v, icon]) => (
-          <button key={v} className={`btn ${s.align === v ? 'active' : ''}`} onClick={() => commitStyle({ align: v })} title={`Aligner ${{ left: 'à gauche', center: 'au centre', right: 'à droite' }[v]}`}>
+        {[['left', <AlignLeft />], ['center', <AlignCenter />], ['right', <AlignRight />]].map(([v, icon]) => (
+          <button key={v} className={`btn ${s.align === v ? 'active' : ''}`} onClick={() => commitStyle({ align: v })} title={T('Aligner {0}', { left: T('à gauche'), center: T('au centre'), right: T('à droite') }[v])}>
             {icon}
           </button>
         ))}
       </div>
-      <Slider label="Espacement des lettres" value={Math.round(s.spacing * 100)} min={-5} max={50} step={1} format={pct}
+      <Slider label={T('Espacement des lettres')} value={Math.round(s.spacing * 100)} min={-5} max={50} step={1} format={pct}
         onStart={checkpoint} onChange={(v) => setStyle({ spacing: v / 100 })} onReset={() => commitStyle({ spacing: 0 })} />
 
-      <h3>Couleurs</h3>
+      <h3>{T('Couleurs')}</h3>
       <div className="field-row color-row">
-        <span>Couleur du texte</span>
+        <span>{T('Couleur du texte')}</span>
         <input type="color" value={s.color} onFocus={checkpoint} onChange={(e) => setStyle({ color: e.target.value })} />
       </div>
-      <ColorToggle label="Dégradé" on={!!s.gradient} color={s.gradient || '#ff3d77'} onStart={checkpoint}
+      <ColorToggle label={T('Dégradé')} on={!!s.gradient} color={s.gradient || '#ff3d77'} onStart={checkpoint}
         onToggle={(on) => commitStyle({ gradient: on ? '#ff3d77' : null })} onColor={(c) => setStyle({ gradient: c })} />
-      <ColorToggle label="Contour" on={s.outline} color={s.outlineColor} onStart={checkpoint}
+      <ColorToggle label={T('Contour')} on={s.outline} color={s.outlineColor} onStart={checkpoint}
         onToggle={(on) => commitStyle({ outline: on })} onColor={(c) => setStyle({ outlineColor: c })} />
       {s.outline && (
-        <Slider label="Épaisseur du contour" value={Math.round(s.outlineWidth * 100)} min={2} max={30} step={1} format={pct}
+        <Slider label={T('Épaisseur du contour')} value={Math.round(s.outlineWidth * 100)} min={2} max={30} step={1} format={pct}
           onStart={checkpoint} onChange={(v) => setStyle({ outlineWidth: v / 100 })} onReset={() => commitStyle({ outlineWidth: 0.12 })} />
       )}
-      <ColorToggle label="Fond" on={s.box} color={s.boxColor} onStart={checkpoint}
+      <ColorToggle label={T('Fond')} on={s.box} color={s.boxColor} onStart={checkpoint}
         onToggle={(on) => commitStyle({ box: on })} onColor={(c) => setStyle({ boxColor: c })} />
       {s.box && (
-        <Slider label="Opacité du fond" value={Math.round(s.boxOpacity * 100)} min={10} max={100} step={1} format={pct}
+        <Slider label={T('Opacité du fond')} value={Math.round(s.boxOpacity * 100)} min={10} max={100} step={1} format={pct}
           onStart={checkpoint} onChange={(v) => setStyle({ boxOpacity: v / 100 })} onReset={() => commitStyle({ boxOpacity: 0.6 })} />
       )}
-      <ColorToggle label="Ombre" on={s.shadow} color={s.shadowColor} onStart={checkpoint}
+      <ColorToggle label={T('Ombre')} on={s.shadow} color={s.shadowColor} onStart={checkpoint}
         onToggle={(on) => commitStyle({ shadow: on })} onColor={(c) => setStyle({ shadowColor: c })} />
-      <ColorToggle label="Lueur (néon)" on={s.glow} color={s.glowColor} onStart={checkpoint}
+      <ColorToggle label={T('Lueur (néon)')} on={s.glow} color={s.glowColor} onStart={checkpoint}
         onToggle={(on) => commitStyle({ glow: on })} onColor={(c) => setStyle({ glowColor: c })} />
 
-      <h3>Position</h3>
-      <div className="text-spots" title="Placer le texte">
+      <h3>{T('Position')}</h3>
+      <div className="text-spots" title={T('Placer le texte')}>
         {SPOTS.map((y) =>
           SPOTS.map((x) => (
             <button
@@ -210,13 +212,13 @@ export default function TextInspector({ clip, dispatch, Slider, onSpeak, aiBusy 
           )),
         )}
       </div>
-      <Slider label="Horizontale" value={Math.round(s.x * 100)} min={0} max={100} step={1} format={pct}
+      <Slider label={T('Horizontale')} value={Math.round(s.x * 100)} min={0} max={100} step={1} format={pct}
         onStart={checkpoint} onChange={(v) => setStyle({ x: v / 100 })} onReset={() => commitStyle({ x: 0.5 })} />
-      <Slider label="Verticale" value={Math.round(s.y * 100)} min={0} max={100} step={1} format={pct}
+      <Slider label={T('Verticale')} value={Math.round(s.y * 100)} min={0} max={100} step={1} format={pct}
         onStart={checkpoint} onChange={(v) => setStyle({ y: v / 100 })} onReset={() => commitStyle({ y: 0.85 })} />
-      <Slider label="Rotation" value={Math.round(s.rotation)} min={-180} max={180} step={1} format={(v) => `${v}°`}
+      <Slider label={T('Rotation')} value={Math.round(s.rotation)} min={-180} max={180} step={1} format={(v) => `${v}°`}
         onStart={checkpoint} onChange={(v) => setStyle({ rotation: v })} onReset={() => commitStyle({ rotation: 0 })} />
-      <Slider label="Opacité" value={Math.round(s.opacity * 100)} min={0} max={100} step={1} format={pct}
+      <Slider label={T('Opacité')} value={Math.round(s.opacity * 100)} min={0} max={100} step={1} format={pct}
         onStart={checkpoint} onChange={(v) => setStyle({ opacity: v / 100 })} onReset={() => commitStyle({ opacity: 1 })} />
     </>
   );
@@ -235,7 +237,7 @@ export default function TextInspector({ clip, dispatch, Slider, onSpeak, aiBusy 
           <SampleTile
             key={id}
             style={id === 'none' ? base : { ...base, bubble: id, box: false, outline: false, color: bubbleSampleText }}
-            text="Salut !"
+            text={T('Salut !')}
             size={250}
             label={label}
             active={s.bubble === id}
@@ -246,18 +248,18 @@ export default function TextInspector({ clip, dispatch, Slider, onSpeak, aiBusy 
       {s.bubble !== 'none' && (
         <>
           <div className="field-row color-row">
-            <span>Couleur de la bulle</span>
+            <span>{T('Couleur de la bulle')}</span>
             <input type="color" value={s.bubbleColor} onFocus={checkpoint} onChange={(e) => setStyle({ bubbleColor: e.target.value })} />
           </div>
           <div className="field-row color-row">
-            <span>Bordure</span>
+            <span>{T('Bordure')}</span>
             <input type="color" value={s.bubbleBorder} onFocus={checkpoint} onChange={(e) => setStyle({ bubbleBorder: e.target.value })} />
           </div>
           {(s.bubble === 'speech' || s.bubble === 'thought') && (
             <div className="field">
-              <span>Pointe</span>
+              <span>{T('Pointe')}</span>
               <div className="segmented">
-                {[['left', '↙ À gauche'], ['right', 'À droite ↘']].map(([v, l]) => (
+                {[['left', <><ArrowDownLeft /> {T('À gauche')}</>], ['right', <>{T('À droite')} <ArrowDownRight /></>]].map(([v, l]) => (
                   <button key={v} className={`btn ${s.tail === v ? 'active' : ''}`} onClick={() => commitStyle({ tail: v })}>
                     {l}
                   </button>
@@ -267,7 +269,7 @@ export default function TextInspector({ clip, dispatch, Slider, onSpeak, aiBusy 
           )}
         </>
       )}
-      <p className="hint">La bulle suit le texte : déplace-le, tourne-le ou anime-le, elle vient avec.</p>
+      <p className="hint">{T('La bulle suit le texte : déplace-le, tourne-le ou anime-le, elle vient avec.')}</p>
     </>
   );
 
@@ -278,13 +280,13 @@ export default function TextInspector({ clip, dispatch, Slider, onSpeak, aiBusy 
           <SampleTile key={id} style={{ ...base, effect: id }} label={label} active={s.effect === id} onApply={() => commitStyle({ effect: id })} />
         ))}
       </div>
-      <p className="hint">L'effet s'ajoute au style : change la couleur du texte dans « Basique » pour varier Néon, 3D ou Écho.</p>
+      <p className="hint">{T("L'effet s'ajoute au style : change la couleur du texte dans « Basique » pour varier Néon, 3D ou Écho.")}</p>
     </>
   );
 
   const animation = (
     <>
-      <Tabs tabs={[['in', 'Entrée'], ['out', 'Sortie'], ['loop', 'En boucle']]} value={tabs.anim} onChange={(v) => setTab('anim', v)} small />
+      <Tabs tabs={[['in', T('Entrée')], ['out', T('Sortie')], ['loop', T('En boucle')]]} value={tabs.anim} onChange={(v) => setTab('anim', v)} small />
       <div className="anim-grid">
         {ANIM_LISTS[tabs.anim].map(([id, label]) => (
           <button key={id} className={`btn ${a[tabs.anim] === id ? 'active' : ''}`} onClick={() => commitAnim({ [tabs.anim]: id })}>
@@ -293,19 +295,19 @@ export default function TextInspector({ clip, dispatch, Slider, onSpeak, aiBusy 
         ))}
       </div>
       {tabs.anim !== 'loop' && (a.in !== 'none' || a.out !== 'none') && (
-        <Slider label="Durée d'entrée / sortie" value={a.duration} min={0.1} max={2} step={0.1}
-          format={(v) => `${v.toFixed(1).replace('.', ',')} s`}
+        <Slider label={T("Durée d'entrée / sortie")} value={a.duration} min={0.1} max={2} step={0.1}
+          format={(v) => `${v.toFixed(1).replace('.', DECIMAL)} s`}
           onStart={checkpoint} onChange={(v) => update({ anim: { ...a, duration: v } })} onReset={() => commitAnim({ duration: 0.5 })} />
       )}
-      <p className="hint">Lance la lecture pour voir l'animation ; elle est rendue telle quelle à l'export.</p>
+      <p className="hint">{T("Lance la lecture pour voir l'animation ; elle est rendue telle quelle à l'export.")}</p>
     </>
   );
 
   const speech = (
     <>
-      <p className="hint">Une voix lit ce texte ; elle est posée sur la piste Audio au début du texte.</p>
+      <p className="hint">{T('Une voix lit ce texte ; elle est posée sur la piste Audio au début du texte.')}</p>
       <label className="field">
-        <span>Langue de la voix</span>
+        <span>{T('Langue de la voix')}</span>
         <select value={voice.lang} onChange={(e) => setVoice({ lang: e.target.value })}>
           {VOICES.map(([id, label]) => (
             <option key={id} value={id}>
@@ -314,22 +316,22 @@ export default function TextInspector({ clip, dispatch, Slider, onSpeak, aiBusy 
           ))}
         </select>
       </label>
-      <Slider label="Vitesse de lecture" value={voice.rate} min={0.6} max={1.6} step={0.05}
-        format={(v) => `${v.toFixed(2).replace(/\.?0+$/, '').replace('.', ',')}×`}
+      <Slider label={T('Vitesse de lecture')} value={voice.rate} min={0.6} max={1.6} step={0.05}
+        format={(v) => `${v.toFixed(2).replace(/\.?0+$/, '').replace('.', DECIMAL)}×`}
         onStart={() => {}} onChange={(v) => setVoice({ rate: v })} onReset={() => setVoice({ rate: 1 })} />
       <button className="btn primary" disabled={aiBusy || !onSpeak || !(clip.text || '').trim()} onClick={() => onSpeak(clip, voice.lang, voice.rate)}>
-        🔊 Créer la voix
+        <Volume2 /> {T('Créer la voix')}
       </button>
-      <p className="hint">Voix MMS-TTS (Meta), créée sur ton ordinateur. Licence CC BY-NC 4.0 : pour un usage non commercial.</p>
+      <p className="hint">{T('Voix MMS-TTS (Meta), créée sur ton ordinateur. Licence CC BY-NC 4.0 : pour un usage non commercial.')}</p>
     </>
   );
 
   return (
     <>
-      <Tabs tabs={[['text', 'Texte'], ['anim', 'Animation'], ['voice', 'Voix']]} value={tabs.main} onChange={(v) => setTab('main', v)} />
+      <Tabs tabs={[['text', T('Texte')], ['anim', T('Animation')], ['voice', T('Voix')]]} value={tabs.main} onChange={(v) => setTab('main', v)} />
       {tabs.main === 'text' && (
         <>
-          <Tabs tabs={[['basic', 'Basique'], ['bubble', 'Bulle'], ['effects', 'Effets']]} value={tabs.text} onChange={(v) => setTab('text', v)} small />
+          <Tabs tabs={[['basic', T('Basique')], ['bubble', T('Bulle')], ['effects', T('Effets')]]} value={tabs.text} onChange={(v) => setTab('text', v)} small />
           {tabs.text === 'basic' && basic}
           {tabs.text === 'bubble' && bubbles}
           {tabs.text === 'effects' && effects}

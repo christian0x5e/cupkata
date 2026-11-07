@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { inWindow, visibleWindow } from '../sync.js';
 import { clipAudio, clipSpeed, MAX_VOLUME, end, freeLane, insertMain, laneCount, laneOf, overlaps, sitsOn, totalDuration, videoTransitions, MEDIA_LIST_MIME, MEDIA_MIME, OVERLAY_TRANSFORM, selectionOf, STACKED, TRANSITIONS } from '../project.js';
 import { formatShort, formatTime } from '../format.js';
+import { markersToChapters } from '../chapters.js';
 import { clipEffect, EFFECTS } from '../effects.js';
 import Waveform from './Waveform.jsx';
 
@@ -15,14 +17,17 @@ import { EFFECT_MIME } from './EffectsPanel.jsx';
 import { FILTER_MIME } from './FiltersPanel.jsx';
 import { filterInfo } from '../filters.js';
 import { DEFAULT_INTENSITY } from '../effects.js';
+import { ArrowLeftToLine, ArrowRightLeft, ArrowRightToLine, Blend, Captions, ClipboardPaste, Copy, Crosshair, EffectIcon, Flag, Link, ListOrdered, Magnet, Maximize2, Mic, MoveHorizontal, Redo2, Scissors, Snowflake, Trash2, Type, Undo2, Volume2, VolumeX, X } from './icons.jsx';
+import { DECIMAL, T } from '../i18n.js';
+import { getSetting } from '../settings.js';
 
 const SNAP_PX = 8;
 const TRACKS = [
-  { id: 'text', label: 'Texte' },
-  { id: 'fx', label: 'Effets' },
-  { id: 'filter', label: 'Filtres' },
-  { id: 'video', label: 'Vidéo' },
-  { id: 'audio', label: 'Audio' },
+  { id: 'text', label: T('Texte') },
+  { id: 'fx', label: T('Effets') },
+  { id: 'filter', label: T('Filtres') },
+  { id: 'video', label: T('Vidéo') },
+  { id: 'audio', label: T('Audio') },
 ];
 
 function tickStep(pps) {
@@ -32,7 +37,10 @@ function tickStep(pps) {
 
 const isMainClip = (c) => c.track === 'video' && laneOf(c) === 0;
 
-export default function Timeline({ state, dispatch, time, playing, onSeek, pps, setPps, onOpenSubtitles, onToggleMarker, onTrim, peaks, onHover, onVoiceover, zone, onZone, onFreeze, magnet, setMagnet, link, setLink }) {
+const TRANSITION_LENGTHS = [0.5, 1, 1.5, 2];
+const MENU_MARGIN = 8;
+
+export default function Timeline({ state, dispatch, time, playing, onSeek, pps, setPps, onOpenSubtitles, onToggleMarker, onTrim, peaks, onHover, onVoiceover, zone, onZone, onFreeze, onOpenTransitions, magnet, setMagnet, link, setLink }) {
   const { clips, media, selectedId, past, future } = state;
   const chosen = useMemo(() => new Set(selectionOf(state)), [state.multi, selectedId]);
   const [marquee, setMarquee] = useState(null);
@@ -61,6 +69,7 @@ export default function Timeline({ state, dispatch, time, playing, onSeek, pps, 
   stateRef.current = state;
 
   const total = totalDuration(clips);
+  const chapters = useMemo(() => markersToChapters(state.markers, total), [state.markers, total]);
   // While a clip is dragged, the timeline never gets narrower: shrinking it would make the browser
   // pull the scroll position back, which the drag would read as a pointer movement.
   const [dragWidth, setDragWidth] = useState(0);
@@ -68,9 +77,18 @@ export default function Timeline({ state, dispatch, time, playing, onSeek, pps, 
   // While clips make room for a dragged one: its outline under the mouse, and the clips in their slots.
   const [ghost, setGhost] = useState(null);
   const [menu, setMenu] = useState(null);
+  const menuRef = useRef(null);
+  // The menu goes on the page itself, so that a panel's effects cannot move it, and stays inside the window.
+  useLayoutEffect(() => {
+    if (!menu) return;
+    const el = menuRef.current;
+    const { width, height } = el.getBoundingClientRect();
+    el.style.left = `${Math.max(MENU_MARGIN, Math.min(menu.x, window.innerWidth - width - MENU_MARGIN))}px`;
+    el.style.top = `${Math.max(MENU_MARGIN, Math.min(menu.y, window.innerHeight - height - MENU_MARGIN))}px`;
+  }, [menu]);
   const magnetRef = useRef(magnet);
   magnetRef.current = magnet;
-  const [snapOn, setSnapOn] = useState(true);
+  const [snapOn, setSnapOn] = useState(() => getSetting('snap'));
   const snapRef = useRef(snapOn);
   snapRef.current = snapOn;
   const linkRef = useRef(link);
@@ -103,12 +121,12 @@ export default function Timeline({ state, dispatch, time, playing, onSeek, pps, 
         const max = item ? clip.duration / 2 : clip.duration - fo0;
         const fi = Math.min(max, Math.max(0, round(fi0 + dx)));
         dispatch({ type: 'UPDATE_CLIP', id: clip.id, patch: { fadeIn: fi } });
-        setGuide({ time: clip.start + fi, label: `Fondu d'entrée ${fi.toFixed(1).replace('.', ',')} s` });
+        setGuide({ time: clip.start + fi, label: T("Fondu d'entrée {0} s", fi.toFixed(1).replace('.', DECIMAL)) });
       } else {
         const max = item ? clip.duration / 2 : clip.duration - fi0;
         const fo = Math.min(max, Math.max(0, round(fo0 - dx)));
         dispatch({ type: 'UPDATE_CLIP', id: clip.id, patch: { fadeOut: fo } });
-        setGuide({ time: clip.start + clip.duration - fo, label: `Fondu de sortie ${fo.toFixed(1).replace('.', ',')} s` });
+        setGuide({ time: clip.start + clip.duration - fo, label: T('Fondu de sortie {0} s', fo.toFixed(1).replace('.', DECIMAL)) });
       }
     };
     const up = () => {
@@ -126,13 +144,13 @@ export default function Timeline({ state, dispatch, time, playing, onSeek, pps, 
         className="fade-handle in"
         style={{ left: Math.max(4, fi * pps) }}
         onPointerDown={(e) => startFade(e, c, 'in')}
-        title="Tire vers la droite pour faire monter le son en douceur au début"
+        title={T('Tire vers la droite pour faire monter le son en douceur au début')}
       />
       <div
         className="fade-handle out"
         style={{ right: Math.max(4, fo * pps) }}
         onPointerDown={(e) => startFade(e, c, 'out')}
-        title="Tire vers la gauche pour faire baisser le son en douceur à la fin"
+        title={T('Tire vers la gauche pour faire baisser le son en douceur à la fin')}
       />
     </>
   );
@@ -146,9 +164,9 @@ export default function Timeline({ state, dispatch, time, playing, onSeek, pps, 
         const n = laneCount(clips, t.id);
         const lanes = Array.from({ length: n }, (_, i) => i);
         if (t.id !== 'audio') lanes.reverse();
-        const label = (lane) => (t.id === 'video' ? (lane ? `Incrust. ${lane}` : t.label) : lane ? `${t.label} ${lane + 1}` : t.label);
+        const label = (lane) => (t.id === 'video' ? (lane ? T('Incrust. {0}', lane) : t.label) : lane ? `${t.label} ${lane + 1}` : t.label);
         const out = lanes.map((lane) => ({ ...t, lane, label: label(lane), overlay: t.id === 'video' && lane > 0 }));
-        if (t.id === 'video') out.unshift({ ...t, lane: n, label: '+ Incrust.', overlay: true, ghost: true });
+        if (t.id === 'video') out.unshift({ ...t, lane: n, label: T('+ Incrust.'), overlay: true, ghost: true });
         return out;
       }),
     [clips],
@@ -338,7 +356,7 @@ export default function Timeline({ state, dispatch, time, playing, onSeek, pps, 
             dispatch({ type: 'LIVE_CLIPS', clips: plan.clips });
           }
           setGhost({ left: s * pps, top: row.top - box.top, width: clip.duration * pps, height: row.height, id: clip.id });
-          setGuide({ time: plan.start, snapped: true, label: `${formatTime(plan.start)} · s'insère ici` });
+          setGuide({ time: plan.start, snapped: true, label: T("{0} · s'insère ici", formatTime(plan.start)) });
           return;
         }
         if (slot !== null) {
@@ -362,7 +380,7 @@ export default function Timeline({ state, dispatch, time, playing, onSeek, pps, 
         update({ start: s, lane: curLane });
         for (const l of linked) dispatch({ type: 'UPDATE_CLIP', id: l.id, patch: { start: l.start + s - clip.start } });
         const glue = magnetic(ev) && attachPlan(s, curLane);
-        if (glue && glue.prev) setGuide({ time: glue.start, snapped: true, label: `${formatTime(glue.start)} · s'attache ici` });
+        if (glue && glue.prev) setGuide({ time: glue.start, snapped: true, label: T("{0} · s'attache ici", formatTime(glue.start)) });
         else showGuide(edge === 'end' ? s + clip.duration : s);
       } else if (mode === 'trim-l') {
         const prevEnd = sameTrack.filter((c) => end(c) <= clip.start + 1e-6).reduce((a, c) => Math.max(a, end(c)), 0);
@@ -500,7 +518,7 @@ export default function Timeline({ state, dispatch, time, playing, onSeek, pps, 
             dispatch({ type: 'LIVE_CLIPS', clips: plan.clips });
           }
           setGhost({ left: s * pps, top: row.top - box.top, width: span * pps, height: row.height, label: `${ids.length} clips` });
-          setGuide({ time: plan.start, snapped: true, label: `${ids.length} clips · s'insèrent à ${formatTime(plan.start)}` });
+          setGuide({ time: plan.start, snapped: true, label: T("{0} clips · s'insèrent à {1}", ids.length, formatTime(plan.start)) });
           return;
         }
         slot = null;
@@ -527,7 +545,7 @@ export default function Timeline({ state, dispatch, time, playing, onSeek, pps, 
       const side = mode === 'trim-l' ? 'start' : 'end';
       dispatch({ type: 'GROUP_TRIM', base, ids, side, delta, ripple: magnetRef.current && !ev.altKey, link: linkRef.current });
       const shown = clip.duration + (side === 'end' ? delta : -delta);
-      setGuide({ time: side === 'end' ? clip.start + shown : clip.start + delta, label: `${ids.length} clips · ${delta >= 0 === (side === 'end') ? '+' : '−'}${Math.abs(delta).toFixed(2).replace('.', ',')} s` });
+      setGuide({ time: side === 'end' ? clip.start + shown : clip.start + delta, label: `${ids.length} clips · ${delta >= 0 === (side === 'end') ? '+' : '−'}${Math.abs(delta).toFixed(2).replace('.', DECIMAL)} s` });
     };
     const up = () => {
       setDragWidth(0);
@@ -568,10 +586,15 @@ export default function Timeline({ state, dispatch, time, playing, onSeek, pps, 
   // Right click: on a clip outside the selection, it becomes the selection.
   function openMenu(e) {
     e.preventDefault();
+    const transition = e.target.closest?.('.trans-mark')?.dataset.clip;
+    if (transition) {
+      setMenu({ x: e.clientX, y: e.clientY, transition });
+      return;
+    }
     const id = e.target.closest?.('.clip[data-id]')?.dataset.id;
     if (id && !chosen.has(id)) dispatch({ type: 'SELECT', id });
     if (!id && !state.clipboard.length) return;
-    setMenu({ x: Math.min(e.clientX, window.innerWidth - 250), y: Math.min(e.clientY, window.innerHeight - (id ? 400 : 60)), id });
+    setMenu({ x: e.clientX, y: e.clientY, id });
   }
 
   // Label of a video or audio lane: cuts or sets the sound of all the clips on it at once.
@@ -582,23 +605,23 @@ export default function Timeline({ state, dispatch, time, playing, onSeek, pps, 
     const ids = list.map((c) => c.id);
     const muted = list.every((c) => c.muted);
     const volume = Math.round(clipAudio(list[0]).volume * 100);
-    const name = r.id === 'video' ? 'des vidéos de cette piste' : 'de cette piste';
+    const name = r.id === 'video' ? T('des vidéos de cette piste') : T('de cette piste');
     return (
       <span className="lane-sound">
         <button
           className={muted ? 'off' : ''}
           onClick={() => dispatch({ type: 'TOGGLE_MUTE', ids })}
-          title={muted ? `Rétablir le son ${name}` : `Couper le son ${name}`}
-          aria-label={muted ? `Rétablir le son ${name}` : `Couper le son ${name}`}
+          title={muted ? T('Rétablir le son {0}', name) : T('Couper le son {0}', name)}
+          aria-label={muted ? T('Rétablir le son {0}', name) : T('Couper le son {0}', name)}
         >
-          {muted ? '🔇' : '🔊'}
+          {muted ? <VolumeX /> : <Volume2 />}
         </button>
         <input
           type="range"
           min={0}
           max={MAX_VOLUME * 100}
           value={muted ? 0 : volume}
-          title={`Volume ${name} : ${muted ? 0 : volume} %`}
+          title={T('Volume {0} : {1} %', name, muted ? 0 : volume)}
           aria-label={`Volume ${name}`}
           onPointerDown={() => dispatch({ type: 'CHECKPOINT' })}
           onChange={(e) => dispatch({ type: 'UPDATE_MANY', ids, patch: { volume: Number(e.target.value) / 100, muted: false } })}
@@ -607,16 +630,37 @@ export default function Timeline({ state, dispatch, time, playing, onSeek, pps, 
     );
   }
 
+  function transitionItems(id) {
+    const tr = transitions.find((x) => x.b.id === id);
+    if (!tr) return [];
+    const longest = Math.min(tr.a.duration, tr.b.duration);
+    return [
+      { label: T('Retirer la transition'), keys: T('Suppr'), run: () => dispatch({ type: 'REMOVE_TRANSITION', ids: [id] }) },
+      { label: T('Changer la transition'), run: onOpenTransitions },
+      null,
+      ...TRANSITION_LENGTHS.filter((d) => d <= longest).map((d) => ({
+        label: T('Durée : {0} s', String(d).replace('.', DECIMAL)),
+        off: Math.abs(tr.d - d) < 1e-3,
+        run: () => {
+          dispatch({ type: 'CHECKPOINT' });
+          dispatch({ type: 'UPDATE_CLIP', id, patch: { transition: { ...tr.b.transition, duration: d } } });
+        },
+      })),
+    ];
+  }
+
   function menuItems() {
-    const paste = { label: 'Coller à la tête de lecture', keys: 'Ctrl+V', off: !state.clipboard.length, run: () => dispatch({ type: 'PASTE', time, link }) };
+    if (menu.transition) return transitionItems(menu.transition);
+    const paste = { label: T('Coller à la tête de lecture'), keys: 'Ctrl+V', off: !state.clipboard.length, run: () => dispatch({ type: 'PASTE', time, link }) };
     if (!menu.id) return [paste];
     const ids = chosen.has(menu.id) ? [...chosen] : [menu.id];
     const hasMain = clips.some((c) => ids.includes(c.id) && isMainClip(c));
     const sound = clips.filter((c) => ids.includes(c.id) && mediaById[c.mediaId]?.hasAudio);
+    const withTransition = clips.some((c) => ids.includes(c.id) && c.transition?.type);
     return [
-      { label: 'Copier', keys: 'Ctrl+C', run: () => dispatch({ type: 'COPY', ids }) },
+      { label: T('Copier'), keys: 'Ctrl+C', run: () => dispatch({ type: 'COPY', ids }) },
       {
-        label: 'Couper',
+        label: T('Couper'),
         keys: 'Ctrl+X',
         run: () => {
           dispatch({ type: 'COPY', ids });
@@ -624,22 +668,23 @@ export default function Timeline({ state, dispatch, time, playing, onSeek, pps, 
         },
       },
       paste,
-      { label: 'Dupliquer', keys: 'Ctrl+D', run: () => dispatch({ type: 'DUPLICATE', ids, link }) },
+      { label: T('Dupliquer'), keys: 'Ctrl+D', run: () => dispatch({ type: 'DUPLICATE', ids, link }) },
       null,
-      { label: 'Déplacer avant le clip précédent', keys: 'Ctrl+←', off: !hasMain, run: () => dispatch({ type: 'MOVE_ORDER', ids, dir: -1, link }) },
-      { label: 'Déplacer après le clip suivant', keys: 'Ctrl+→', off: !hasMain, run: () => dispatch({ type: 'MOVE_ORDER', ids, dir: 1, link }) },
-      ...(ids.length >= 2 ? [{ label: 'Aligner bout à bout', run: () => dispatch({ type: 'ALIGN', ids, how: 'sequence', time, link }) }] : []),
+      { label: T('Déplacer avant le clip précédent'), keys: 'Ctrl+←', off: !hasMain, run: () => dispatch({ type: 'MOVE_ORDER', ids, dir: -1, link }) },
+      { label: T('Déplacer après le clip suivant'), keys: 'Ctrl+→', off: !hasMain, run: () => dispatch({ type: 'MOVE_ORDER', ids, dir: 1, link }) },
+      ...(ids.length >= 2 ? [{ label: T('Aligner bout à bout'), run: () => dispatch({ type: 'ALIGN', ids, how: 'sequence', time, link }) }] : []),
       null,
-      { label: 'Diviser à la tête de lecture', keys: 'S', run: () => dispatch({ type: 'SPLIT', time }) },
+      { label: T('Diviser à la tête de lecture'), keys: 'S', run: () => dispatch({ type: 'SPLIT', time }) },
       {
-        label: sound.length && sound.every((c) => c.muted) ? 'Rétablir le son' : 'Couper le son',
+        label: sound.length && sound.every((c) => c.muted) ? T('Rétablir le son') : T('Couper le son'),
         keys: 'M',
         off: !sound.length,
         run: () => dispatch({ type: 'TOGGLE_MUTE', ids }),
       },
-      { label: 'Retirer les effets', run: () => dispatch({ type: 'REMOVE_EFFECTS', ids }) },
-      { label: 'Supprimer', keys: 'Suppr', run: () => dispatch({ type: 'DELETE_MANY', ids, ripple: magnet, link }) },
-      { label: 'Supprimer et laisser le trou', keys: 'Maj+Suppr', run: () => dispatch({ type: 'DELETE_MANY', ids }) },
+      { label: T('Retirer les effets'), run: () => dispatch({ type: 'REMOVE_EFFECTS', ids }) },
+      ...(withTransition ? [{ label: T('Retirer la transition'), run: () => dispatch({ type: 'REMOVE_TRANSITION', ids }) }] : []),
+      { label: T('Supprimer'), keys: T('Suppr'), run: () => dispatch({ type: 'DELETE_MANY', ids, ripple: magnet, link }) },
+      { label: T('Supprimer et laisser le trou'), keys: T('Maj+Suppr'), run: () => dispatch({ type: 'DELETE_MANY', ids }) },
     ];
   }
 
@@ -727,95 +772,103 @@ export default function Timeline({ state, dispatch, time, playing, onSeek, pps, 
   return (
     <section className="panel timeline">
       <div className="tl-toolbar">
-        <button className="btn ghost" onClick={() => dispatch({ type: 'ADD_TEXT', start: time })} title="Ajouter un texte à la tête de lecture (T)">
-          T+ Texte
+        <button className="btn ghost" onClick={() => dispatch({ type: 'ADD_TEXT', start: time })} title={T('Ajouter un texte à la tête de lecture (T)')}>
+          <Type /> {T('Texte')}
         </button>
-        <button className="btn ghost" onClick={onOpenSubtitles} title="Créer les sous-titres à partir de la voix">
-          ✎ Sous-titres auto
+        <button className="btn ghost" onClick={onOpenSubtitles} title={T('Créer les sous-titres à partir de la voix')}>
+          <Captions /> {T('Sous-titres auto')}
         </button>
         <span className="tl-sep" />
-        <button className="btn ghost" onClick={onToggleMarker} title="Poser ou retirer un marqueur à la tête de lecture (B). Maj + ↑ / ↓ pour sauter d'un marqueur à l'autre">
-          ⚑ Marqueur
+        <button className="btn ghost" onClick={onToggleMarker} title={T("Poser ou retirer un marqueur à la tête de lecture (B). Maj + ↑ / ↓ pour sauter d'un marqueur à l'autre")}>
+          <Flag /> {T('Marqueur')}
         </button>
-        <button className="btn ghost" onClick={() => dispatch({ type: 'SPLIT', time })} title="Diviser à la tête de lecture (S)">
-          ✂ Diviser
+        <button
+          className="btn ghost"
+          disabled={!chapters}
+          onClick={() => navigator.clipboard.writeText(chapters)}
+          title={chapters ? T('Copier les chapitres YouTube à coller dans la description') : T('Il faut au moins 3 chapitres de 10 secondes, créés à partir de vos marqueurs')}
+        >
+          <ListOrdered /> {T('Chapitres')}
         </button>
-        <button className="btn ghost" onClick={() => onFreeze()} title="Figer l'image à la tête de lecture : insère une image fixe de 3 s">
-          ❄ Figer
+        <button className="btn ghost" onClick={() => dispatch({ type: 'SPLIT', time })} title={T('Diviser à la tête de lecture (S)')}>
+          <Scissors /> {T('Diviser')}
         </button>
-        <button className="btn ghost" onClick={() => onTrim('start')} title="Couper le début du clip jusqu'à la tête de lecture (Q)">
-          ⇤ Début ici
+        <button className="btn ghost" onClick={() => onFreeze()} title={T("Figer l'image à la tête de lecture : insère une image fixe de 3 s")}>
+          <Snowflake /> {T('Figer')}
         </button>
-        <button className="btn ghost" onClick={() => onTrim('end')} title="Couper la fin du clip à partir de la tête de lecture (W)">
-          Fin ici ⇥
+        <button className="btn ghost" onClick={() => onTrim('start')} title={T("Couper le début du clip jusqu'à la tête de lecture (Q)")}>
+          <ArrowLeftToLine /> {T('Début ici')}
+        </button>
+        <button className="btn ghost" onClick={() => onTrim('end')} title={T('Couper la fin du clip à partir de la tête de lecture (W)')}>
+         {T('Fin ici')} <ArrowRightToLine />
         </button>
         <button
           className="btn ghost"
           disabled={!selectedId}
           onClick={() => dispatch({ type: 'DELETE_MANY', ids: [...chosen], ripple: magnet, link })}
-          title="Supprimer le clip sélectionné (Suppr). Avec l'aimant, la suite recule pour combler le trou"
+          title={T("Supprimer le clip sélectionné (Suppr). Avec l'aimant, la suite recule pour combler le trou")}
         >
-          🗑 Supprimer
+          <Trash2 /> {T('Supprimer')}
         </button>
-        <button className="btn ghost" onClick={onVoiceover} title="Enregistrer ta voix au micro à partir de la tête de lecture">
-          🎙 Voix off
+        <button className="btn ghost" onClick={onVoiceover} title={T('Enregistrer ta voix au micro à partir de la tête de lecture')}>
+          <Mic /> {T('Voix off')}
         </button>
-        <button className="btn ghost" disabled={!selectedId} onClick={() => dispatch({ type: 'COPY', ids: [...chosen] })} title="Copier la sélection (Ctrl+C)" aria-label="Copier">
-          ⧉
+        <button className="btn ghost" disabled={!selectedId} onClick={() => dispatch({ type: 'COPY', ids: [...chosen] })} title={T('Copier la sélection (Ctrl+C)')} aria-label={T('Copier')}>
+          <Copy />
         </button>
         <button
           className="btn ghost"
           disabled={!state.clipboard.length}
           onClick={(e) => dispatch({ type: 'PASTE', time, plain: e.shiftKey, link })}
-          title="Coller à la tête de lecture (Ctrl+V) — sans effets : Ctrl+Maj+V ou Maj + clic"
-          aria-label="Coller"
+          title={T('Coller à la tête de lecture (Ctrl+V) — sans effets : Ctrl+Maj+V ou Maj + clic')}
+          aria-label={T('Coller')}
         >
-          ⎘
+          <ClipboardPaste />
         </button>
         <span className="tl-sep" />
-        <button className="btn ghost" disabled={!past.length} onClick={() => dispatch({ type: 'UNDO' })} title="Annuler (Ctrl+Z)">
-          ↶
+        <button className="btn ghost" disabled={!past.length} onClick={() => dispatch({ type: 'UNDO' })} title={T('Annuler (Ctrl+Z)')}>
+          <Undo2 />
         </button>
-        <button className="btn ghost" disabled={!future.length} onClick={() => dispatch({ type: 'REDO' })} title="Rétablir (Ctrl+Y)">
-          ↷
+        <button className="btn ghost" disabled={!future.length} onClick={() => dispatch({ type: 'REDO' })} title={T('Rétablir (Ctrl+Y)')}>
+          <Redo2 />
         </button>
         <span className="spacer" />
         <div className="tl-toggles">
           <button
             className={`btn ghost ${magnet ? 'active' : ''}`}
             onClick={() => setMagnet((v) => !v)}
-            title="Aimant : sur la piste Vidéo, les clips se suivent sans trou et s'écartent quand tu en glisses un entre eux ; ailleurs, un clip se colle au précédent (Alt pendant le glissement pour placer librement)"
+            title={T("Aimant : sur la piste Vidéo, les clips se suivent sans trou et s'écartent quand tu en glisses un entre eux ; ailleurs, un clip se colle au précédent (Alt pendant le glissement pour placer librement)")}
           >
-            🧲
+            <Magnet />
           </button>
           <button
             className={`btn ghost ${snapOn ? 'active' : ''}`}
             onClick={() => setSnapOn((v) => !v)}
-            title="Aimantation auto : les bords des clips s'alignent sur les autres clips et la tête de lecture"
+            title={T("Aimantation auto : les bords des clips s'alignent sur les autres clips et la tête de lecture")}
           >
-            ⊹
+            <Crosshair />
           </button>
           <button
             className={`btn ghost ${link ? 'active' : ''}`}
             onClick={() => setLink((v) => !v)}
-            title="Liaison : les textes, effets, filtres et sons posés sur un clip vidéo le suivent quand tu le déplaces"
+            title={T('Liaison : les textes, effets, filtres et sons posés sur un clip vidéo le suivent quand tu le déplaces')}
           >
-            🔗
+            <Link />
           </button>
           <button
             className={`btn ghost ${axis ? 'active' : ''}`}
             onClick={() => setAxis((v) => !v)}
-            title="Axe d'aperçu : survole la timeline pour voir l'image sous la souris sans bouger la tête de lecture"
+            title={T("Axe d'aperçu : survole la timeline pour voir l'image sous la souris sans bouger la tête de lecture")}
           >
-            ⇹
+            <MoveHorizontal />
           </button>
         </div>
         <span className="tl-sep" />
-        <button className="btn ghost" onClick={zoomToFit} title="Ajuster le zoom pour voir tout le montage (Maj+Z)">
-          ⤢ Tout voir
+        <button className="btn ghost" onClick={zoomToFit} title={T('Ajuster le zoom pour voir tout le montage (Maj+Z)')}>
+          <Maximize2 /> {T('Tout voir')}
         </button>
         <label className="zoom">
-          Zoom
+         {T('Zoom')}
           <input type="range" min="5" max="400" step="1" value={Math.round(pps)} onChange={(e) => setPps(Number(e.target.value))} />
         </label>
       </div>
@@ -826,7 +879,7 @@ export default function Timeline({ state, dispatch, time, playing, onSeek, pps, 
           <div className="tl-labels">
             <div className="tl-ruler-spacer" />
             {rows.map((r) => (
-              <div key={`${r.id}:${r.lane}`} className={`tl-label ${r.id}${r.overlay ? ' overlay' : ''}${r.ghost ? ' ghost' : ''}`} title={STACKED.includes(r.id) ? 'Glisse un élément vers le haut ou le bas pour changer de piste' : undefined}>
+              <div key={`${r.id}:${r.lane}`} className={`tl-label ${r.id}${r.overlay ? ' overlay' : ''}${r.ghost ? ' ghost' : ''}`} title={STACKED.includes(r.id) ? T('Glisse un élément vers le haut ou le bas pour changer de piste') : undefined}>
                 {r.label}
                 {laneSound(r)}
               </div>
@@ -847,7 +900,7 @@ export default function Timeline({ state, dispatch, time, playing, onSeek, pps, 
             <div
               className="tl-ruler"
               onPointerDown={startSeek}
-              title="Clique pour placer la tête de lecture · Maj + glisser pour choisir une zone de lecture (I / O aux touches, X pour l'effacer)"
+              title={T("Clique pour placer la tête de lecture · Maj + glisser pour choisir une zone de lecture (I / O aux touches, X pour l'effacer)")}
             >
               {ticks.map((t) => (
                 <span key={t} className="tick" style={{ left: t * pps }}>
@@ -859,7 +912,7 @@ export default function Timeline({ state, dispatch, time, playing, onSeek, pps, 
                   key={m.id}
                   className={`tl-marker ${m.beat ? 'beat' : ''}`}
                   style={{ left: m.time * pps }}
-                  title={`${m.label ? `${m.label} — ` : ''}${formatShort(m.time)}\nClic : y aller · Double-clic : nommer · Clic droit : retirer`}
+                  title={T('{0}{1} Clic : y aller · Double-clic : nommer · Clic droit : retirer', m.label ? `${m.label} — ` : '', formatShort(m.time))}
                   onPointerDown={(e) => {
                     e.stopPropagation();
                     onSeek(m.time);
@@ -940,30 +993,46 @@ export default function Timeline({ state, dispatch, time, playing, onSeek, pps, 
                 }}
               >
                 {track.id === 'fx' && !clips.some((c) => c.track === 'fx') && (
-                  <span className="tl-track-hint">Glisse un effet ici pour l'appliquer à tout ce qui est en dessous</span>
+                  <span className="tl-track-hint">{T("Glisse un effet ici pour l'appliquer à tout ce qui est en dessous")}</span>
                 )}
                 {track.id === 'filter' && !clips.some((c) => c.track === 'filter') && (
-                  <span className="tl-track-hint">Glisse un filtre ici pour l'appliquer à tout ce qui est en dessous</span>
+                  <span className="tl-track-hint">{T("Glisse un filtre ici pour l'appliquer à tout ce qui est en dessous")}</span>
                 )}
                 {track.ghost && (
-                  <span className="tl-track-hint">Glisse ici une vidéo ou une photo (ou un clip de la piste Vidéo) pour l'incruster par-dessus</span>
+                  <span className="tl-track-hint">{T("Glisse ici une vidéo ou une photo (ou un clip de la piste Vidéo) pour l'incruster par-dessus")}</span>
                 )}
                 {track.id === 'video' && track.lane === 0 &&
                   transitions.map((tr) => (
                     <div
                       key={tr.b.id}
-                      className="trans-mark"
-                      style={{ left: tr.from * pps, width: Math.max(10, tr.d * pps) }}
-                      title={`${TRANSITIONS.find((x) => x.id === tr.type)?.label} — ${tr.d.toFixed(1)} s`}
+                      data-clip={tr.b.id}
+                      className={`trans-mark ${state.transitionId === tr.b.id ? 'selected' : ''}`}
+                      style={{ left: tr.from * pps, width: Math.max(18, tr.d * pps) }}
+                      title={T('{0} — {1} s. Clic : sélectionner, Suppr : retirer, clic droit : options', TRANSITIONS.find((x) => x.id === tr.type)?.label, tr.d.toFixed(1).replace('.', DECIMAL))}
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                        dispatch({ type: 'SELECT_TRANSITION', id: tr.b.id });
+                      }}
+                      onDoubleClick={onOpenTransitions}
                     >
-                      ⧓
+                      <ArrowRightLeft />
+                      <button
+                        className="trans-remove"
+                        title={T('Retirer la transition')}
+                        aria-label={T('Retirer la transition')}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onDoubleClick={(e) => e.stopPropagation()}
+                        onClick={() => dispatch({ type: 'REMOVE_TRANSITION', ids: [tr.b.id] })}
+                      >
+                        <X />
+                      </button>
                     </div>
                   ))}
                 {clips
                   .filter((c) => c.track === track.id && laneOf(c) === track.lane && (chosen.has(c.id) || inWindow(c, pps, view)))
                   .map((c) => {
                     if (c.track === 'filter') {
-                      const name = filterInfo(c.filter?.id, state.filters)?.name || 'Filtre';
+                      const name = filterInfo(c.filter?.id, state.filters)?.name || T('Filtre');
                       const fi = Math.min(c.fadeIn ?? 0, c.duration / 2);
                       const fo = Math.min(c.fadeOut ?? 0, c.duration / 2);
                       return (
@@ -979,7 +1048,7 @@ export default function Timeline({ state, dispatch, time, playing, onSeek, pps, 
                           {fo > 0 && <div className="fade out" style={{ width: fo * pps }} />}
                           {fadeHandles(c, fi, fo)}
                           <div className="handle l" onPointerDown={(e) => startDrag(e, c, 'trim-l')} />
-                          <span className="clip-name">◐ {name}</span>
+                          <span className="clip-name"><Blend /> {name}</span>
                           <div className="handle r" onPointerDown={(e) => startDrag(e, c, 'trim-r')} />
                         </div>
                       );
@@ -995,14 +1064,14 @@ export default function Timeline({ state, dispatch, time, playing, onSeek, pps, 
                           className={`clip fxitem ${chosen.has(c.id) ? 'selected' : ''}`}
                           style={{ left: c.start * pps, width: Math.max(2, c.duration * pps) }}
                           onPointerDown={(e) => startDrag(e, c, 'move')}
-                          title={`${info?.label || 'Effet'} — ${c.duration.toFixed(2)} s`}
+                          title={`${info?.label || T('Effet')} — ${c.duration.toFixed(2)} s`}
                         >
                           {fi > 0 && <div className="fade in" style={{ width: fi * pps }} />}
                           {fo > 0 && <div className="fade out" style={{ width: fo * pps }} />}
                           {fadeHandles(c, fi, fo)}
                           <div className="handle l" onPointerDown={(e) => startDrag(e, c, 'trim-l')} />
                           <span className="clip-name">
-                            {info?.icon} {info?.label || 'Effet'}
+                            {info && <EffectIcon id={info.id} />} {info?.label || T('Effet')}
                           </span>
                           <div className="handle r" onPointerDown={(e) => startDrag(e, c, 'trim-r')} />
                         </div>
@@ -1029,7 +1098,7 @@ export default function Timeline({ state, dispatch, time, playing, onSeek, pps, 
                     const a = clipAudio(c);
                     const fi = Math.min(a.fadeIn, c.duration);
                     const fo = Math.min(a.fadeOut, c.duration - fi);
-                    const badge = !m.hasAudio ? '' : a.muted ? '🔇' : a.volume !== 1 ? `${Math.round(a.volume * 100)} %` : '';
+                    const badge = !m.hasAudio ? '' : a.muted ? <VolumeX /> : a.volume !== 1 ? `${Math.round(a.volume * 100)} %` : '';
                     const fx = clipEffect(c);
                     const fxInfo = fx && EFFECTS.find((e) => e.id === fx.type);
                     return (
@@ -1072,13 +1141,13 @@ export default function Timeline({ state, dispatch, time, playing, onSeek, pps, 
                         {m.hasAudio && !a.muted && fo > 0 && <div className="fade out" style={{ width: fo * pps }} />}
                         {m.hasAudio && !a.muted && !m.missing && fadeHandles(c, fi, fo)}
                         <span className="clip-name">
-                          {clipSpeed(c) !== 1 && <span className="clip-badge speed">{clipSpeed(c).toFixed(2).replace(/.?0+$/, '').replace('.', ',')}×</span>}
-                          {c.reversed && <span className="clip-badge">⇆</span>}
+                          {clipSpeed(c) !== 1 && <span className="clip-badge speed">{clipSpeed(c).toFixed(2).replace(/.?0+$/, '').replace('.', DECIMAL)}×</span>}
+                          {c.reversed && <span className="clip-badge"><ArrowRightLeft /></span>}
                           {badge && <span className="clip-badge">{badge}</span>}
                           {c.filter?.id && filterInfo(c.filter.id, state.filters) && (
-                            <span className="clip-badge filter">◐ {filterInfo(c.filter.id, state.filters).name}</span>
+                            <span className="clip-badge filter"><Blend /> {filterInfo(c.filter.id, state.filters).name}</span>
                           )}
-                          {fxInfo && <span className="clip-badge fx">{fxInfo.icon} {fxInfo.label}</span>}
+                          {fxInfo && <span className="clip-badge fx"><EffectIcon id={fxInfo.id} /> {fxInfo.label}</span>}
                           {m.name}
                         </span>
                         <div className="handle r" onPointerDown={(e) => startDrag(e, c, 'trim-r')} />
@@ -1089,7 +1158,7 @@ export default function Timeline({ state, dispatch, time, playing, onSeek, pps, 
             ))}
 
             {zone && (
-              <div className="tl-zone" style={{ left: zone[0] * pps, width: (zone[1] - zone[0]) * pps }} title="Zone de lecture (X pour l'effacer)" />
+              <div className="tl-zone" style={{ left: zone[0] * pps, width: (zone[1] - zone[0]) * pps }} title={T("Zone de lecture (X pour l'effacer)")} />
             )}
             {marquee && <div className="tl-marquee" style={marquee} />}
             {ghost && (
@@ -1102,7 +1171,7 @@ export default function Timeline({ state, dispatch, time, playing, onSeek, pps, 
               <div className={`tl-guide ${guide.snapped ? 'snapped' : ''}`} style={{ left: guide.time * pps }}>
                 <span>
                   {guide.label || formatTime(guide.time)}
-                  {guide.snapped && !guide.label && ' · aligné'}
+                  {guide.snapped && !guide.label && T('· aligné')}
                 </span>
               </div>
             )}
@@ -1111,8 +1180,8 @@ export default function Timeline({ state, dispatch, time, playing, onSeek, pps, 
           </div>
         </div>
       </div>
-      {menu && (
-        <div className="ctx-menu" style={{ left: menu.x, top: menu.y }} onPointerDown={(e) => e.stopPropagation()}>
+      {menu && createPortal(
+        <div ref={menuRef} className="ctx-menu" style={{ left: menu.x, top: menu.y }} onPointerDown={(e) => e.stopPropagation()}>
           {menuItems().map((item, i) =>
             item ? (
               <button
@@ -1130,7 +1199,8 @@ export default function Timeline({ state, dispatch, time, playing, onSeek, pps, 
               <hr key={i} />
             ),
           )}
-        </div>
+        </div>,
+        document.body,
       )}
     </section>
   );

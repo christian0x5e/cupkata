@@ -10,7 +10,7 @@ import { FPS } from './format.js';
 import { EMOJIS, SHAPES, STICKER_IDS } from './stickers.js';
 import { EXPORT_PRESETS } from './exportPresets.js';
 import { cutRangeOf, timelineWords } from './components/TranscriptPanel.jsx';
-import { KEYFRAME_RANGES, removeKeyframe, setKeyframe, MAX_KEYFRAMES, keyframesOf, keyframeAt } from './keyframes.js';
+import { KEYFRAME_RANGES, removeKeyframe, setKeyframe, setKeyframeEase, MAX_KEYFRAMES, keyframesOf, keyframeAt } from './keyframes.js';
 
 // Carries out the commands of the local API (electron/control.cjs). `app.current` holds what App knows
 // at its latest render; commands go through the same reducer and functions as the buttons.
@@ -261,6 +261,11 @@ export function createCommands(app, dispatchRaw) {
       flushSync(() => app.current.applyProject({ media: [], clips: [], settings: { resolution: '1080p' }, filePath: null }, true));
       return { changed: true };
     },
+    app_quit: async (args) => {
+      guardDiscard(args);
+      await api.controlQuit();
+      return { quitting: true };
+    },
     project_open: async (args) => {
       guardDiscard(args);
       const p = await api.controlOpenProject(args.path);
@@ -411,11 +416,14 @@ export function createCommands(app, dispatchRaw) {
       } else {
         const [lo, hi] = KEYFRAME_RANGES[args.property];
         if (args.value == null) fail('bad_args', 'Donne value, ou remove: true.');
+        if (args.ease && args.property === 'volume') fail('invalid', 'Le volume reste en ligne droite : pas de courbe.');
         if (args.value < lo || args.value > hi) fail('bad_args', `value doit être entre ${lo} et ${hi} pour ${args.property}.`);
         if (keyframesOf(clip, args.property).length >= MAX_KEYFRAMES && !keyframeAt(clip, args.property, tau)) fail('invalid', `${MAX_KEYFRAMES} images clés au plus par propriété.`);
       }
       dispatch({ type: 'CHECKPOINT' });
-      dispatch({ type: 'UPDATE_CLIP', id: clip.id, patch: args.remove ? removeKeyframe(clip, args.property, tau) : setKeyframe(clip, args.property, tau, args.value) });
+      const set = args.remove ? removeKeyframe(clip, args.property, tau) : setKeyframe(clip, args.property, tau, args.value);
+      const patch = args.ease && !args.remove ? setKeyframeEase({ ...clip, ...set }, args.property, tau, args.ease) : set;
+      dispatch({ type: 'UPDATE_CLIP', id: clip.id, patch });
       return { clip: clipOf(app.current, clip.id) };
     },
     clip_move: (args) => {
@@ -589,7 +597,14 @@ export function createCommands(app, dispatchRaw) {
     clip_clean_voice: (args) => {
       const clip = clipOf(app.current, args.clip_id, 'video', 'audio');
       if (!app.current.state.media.find((m) => m.id === clip.mediaId)?.hasAudio) fail('invalid', 'Ce clip n’a pas de son.');
+      if (clip.voiced) fail('invalid', 'Retire d’abord l’effet de voix.');
       return runTool(() => app.current.cleanVoice(clip));
+    },
+    clip_voice_effect: (args) => {
+      const clip = clipOf(app.current, args.clip_id, 'video', 'audio');
+      if (!app.current.state.media.find((m) => m.id === clip.mediaId)?.hasAudio) fail('invalid', 'Ce clip n’a pas de son.');
+      if (clip.cleaned || clip.stable || clip.cutout || clip.reversed) fail('invalid', 'Ce clip joue déjà une copie modifiée : retire-la d’abord.');
+      return runTool(() => app.current.voiceEffect(clip, args.effect === 'none' ? null : args.effect));
     },
     sticker_add: (args) => {
       if (!!args.shape === !!args.emoji) fail('bad_args', 'Donne shape ou emoji.');
@@ -657,7 +672,7 @@ export function createCommands(app, dispatchRaw) {
         await settle();
       }
       app.current.startExport(target, {
-        encode: preset ? { video: preset.video, audio: preset.audio } : null,
+        encode: preset || args.codec ? { video: preset?.video, audio: preset?.audio, codec: args.codec } : null,
         range: args.from != null || args.to != null ? { start: from, duration: Math.min(to, a.total) - from } : null,
       });
       return { started: true, path: target };

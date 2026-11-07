@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { formatTime } from '../format.js';
+import { Circle, Mic, Square, X } from './icons.jsx';
+import { T } from '../i18n.js';
 
 // Voice-over: records the microphone from the playhead while the timeline plays, then the take is
 // saved as an M4A file and placed on the Audio track where the recording started.
@@ -48,7 +50,7 @@ export default function VoiceoverPanel({ open, time, onClose, onStart, onStop, o
         };
         tick();
       } catch (err) {
-        if (!cancelled) setError("Impossible d'ouvrir le micro : vérifie qu'il est branché et autorisé dans Windows (Paramètres › Confidentialité › Microphone).");
+        if (!cancelled) setError(T("Impossible d'ouvrir le micro : vérifie qu'il est branché et autorisé dans Windows (Paramètres › Confidentialité › Microphone)."));
       }
     })();
     return () => {
@@ -118,48 +120,48 @@ export default function VoiceoverPanel({ open, time, onClose, onStart, onStop, o
   return (
     <div className="voice-panel">
       <div className="voice-head">
-        <strong>🎙 Voix off</strong>
-        <button className="btn ghost" disabled={busy} onClick={onClose} title="Fermer">
-          ✕
+        <strong><Mic /> {T('Voix off')}</strong>
+        <button className="btn ghost" disabled={busy} onClick={onClose} title={T('Fermer')}>
+          <X />
         </button>
       </div>
       <label className="field">
-        <span>Micro</span>
+        <span>{T('Micro')}</span>
         <select value={deviceId} disabled={busy} onChange={(e) => setDeviceId(e.target.value)}>
-          <option value="">Micro par défaut</option>
+          <option value="">{T('Micro par défaut')}</option>
           {devices.map((d) => (
             <option key={d.deviceId} value={d.deviceId}>
-              {d.label || 'Micro'}
+              {d.label || T('Micro')}
             </option>
           ))}
         </select>
       </label>
-      <div className="voice-meter" title="Niveau du micro">
+      <div className="voice-meter" title={T('Niveau du micro')}>
         <div style={{ width: `${Math.min(100, Math.round(Math.sqrt(level) * 100))}%` }} className={level > 0.9 ? 'clip' : ''} />
       </div>
       <label className="toggle">
         <input type="checkbox" checked={muteProject} disabled={busy} onChange={(e) => setMuteProject(e.target.checked)} />
-        Couper le son du projet pendant l'enregistrement
+        {T("Couper le son du projet pendant l'enregistrement")}
       </label>
       <div className="voice-status">
-        {phase === 'idle' && <span className="muted">Démarre à {formatTime(time)} (tête de lecture)</span>}
+        {phase === 'idle' && <span className="muted">{T('Démarre à')} {formatTime(time)} {T('(tête de lecture)')}</span>}
         {phase === 'countdown' && <span className="voice-count">{count}</span>}
         {phase === 'recording' && (
           <span className="voice-rec">
             <span className="rec-dot" /> {formatTime(elapsed)}
           </span>
         )}
-        {phase === 'saving' && <span className="muted">Enregistrement du fichier…</span>}
+        {phase === 'saving' && <span className="muted">{T('Enregistrement du fichier…')}</span>}
       </div>
       {error && <p className="error-text">{error}</p>}
       <div className="modal-actions">
         {phase === 'idle' ? (
           <button className="btn primary" disabled={!!error} onClick={begin}>
-            ● Enregistrer
+            <Circle fill="currentColor" /> {T('Enregistrer')}
           </button>
         ) : (
           <button className="btn primary" disabled={phase === 'saving'} onClick={stop}>
-            ■ Arrêter
+            <Square fill="currentColor" /> {T('Arrêter')}
           </button>
         )}
       </div>

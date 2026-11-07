@@ -3,22 +3,29 @@ import { MEDIA_LIST_MIME, MEDIA_MIME, naturalOrder } from '../project.js';
 import { formatShort } from '../format.js';
 import SideMenu from './SideMenu.jsx';
 import SfxPanel from './SfxPanel.jsx';
-import MusicBrowser, { AiMusicPanel, GENRES, LibraryPanel } from './MusicBrowser.jsx';
+import MusicBrowser, { AiMusicPanel, GENRES } from './MusicBrowser.jsx';
+import SOUNDS from '../../shared/sounds.json';
 import SlideshowPanel from './SlideshowPanel.jsx';
+import { ArrowUpDown, Check, Music, Upload, X } from './icons.jsx';
+import { T } from '../i18n.js';
 
 const api = window.cupkata;
+const SOUND_MENU = [
+  { id: 'sfx:all', label: T('Tous'), count: SOUNDS.length },
+  ...[...new Set(SOUNDS.map((s) => s.group))].map((group) => ({ id: `sfx:${group}`, label: T(group), count: SOUNDS.filter((s) => s.group === group).length })),
+];
 const KINDS = [
-  ['all', 'Tout'],
-  ['video', 'Vidéos'],
-  ['image', 'Photos'],
-  ['audio', 'Audio'],
+  ['all', T('Tout')],
+  ['video', T('Vidéos')],
+  ['image', T('Photos')],
+  ['audio', T('Audio')],
 ];
 const SORTS = [
-  ['oldest', 'Ordre d’import'],
-  ['recent', 'Ajout récent'],
-  ['name', 'Nom (A → Z)'],
-  ['long', 'Plus longs'],
-  ['short', 'Plus courts'],
+  ['oldest', T('Ordre d’import')],
+  ['recent', T('Ajout récent')],
+  ['name', T('Nom (A → Z)')],
+  ['long', T('Plus longs')],
+  ['short', T('Plus courts')],
 ];
 // Accents and case don't matter when searching: "eté" finds "Été.mp4".
 const fold = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
@@ -57,21 +64,21 @@ function BinThumb({ m, proxy }) {
   return (
     <div className="bin-thumb" onMouseMove={move} onMouseLeave={() => setHover(null)}>
       {m.missing ? (
-        <span className="bin-missing">Introuvable<br /><small>Cliquer pour relier</small></span>
+        <span className="bin-missing">{T('Introuvable')}<br /><small>{T('Cliquer pour relier')}</small></span>
       ) : m.thumb ? (
         <img src={api.mediaUrl(m.thumb)} alt="" draggable={false} />
       ) : (
-        <span className={`bin-audio ${hover != null ? 'playing' : ''}`}>♪</span>
+        <span className={`bin-audio ${hover != null ? 'playing' : ''}`}><Music /></span>
       )}
       {hover != null && m.type === 'video' && (
         <video ref={videoRef} className="bin-scrub" src={api.mediaUrl(proxy?.file || m.path)} muted preload="auto" draggable={false} />
       )}
       {hover != null && canPreview && <span className="bin-scrub-bar" style={{ left: `${hover * 100}%` }} />}
-      {proxy?.status === 'pending' && <span className="bin-proxy" title="Création d'une copie légère pour un aperçu fluide. L'export utilise toujours l'original.">Aperçu…</span>}
+      {proxy?.status === 'pending' && <span className="bin-proxy" title={T("Création d'une copie légère pour un aperçu fluide. L'export utilise toujours l'original.")}>{T('Aperçu…')}</span>}
       {m.type !== 'image' && (
         <span className="bin-dur">{hover != null && m.type === 'video' ? formatShort(hover * m.duration) : formatShort(m.duration)}</span>
       )}
-      <span className={`bin-kind ${m.type}`}>{{ video: 'Vidéo', image: 'Photo', audio: 'Audio' }[m.type]}</span>
+      <span className={`bin-kind ${m.type}`}>{{ video: T('Vidéo'), image: T('Photo'), audio: T('Audio') }[m.type]}</span>
     </div>
   );
 }
@@ -115,15 +122,15 @@ export default function MediaBin({ proxies = {}, media, clips = [], time = 0, di
     const n = uses.get(m.id) || 0;
     const ok = await api.confirm(
       n
-        ? `Retirer « ${m.name} » du projet ? ${n} clip${n > 1 ? 's' : ''} de la timeline l'utilise${n > 1 ? 'nt' : ''} et ser${n > 1 ? 'ont' : 'a'} supprimé${n > 1 ? 's' : ''}. Le fichier reste sur ton disque.`
-        : `Retirer « ${m.name} » du projet ? Le fichier reste sur ton disque.`,
+        ? T("Retirer « {0} » du projet ? {1} clip{2} de la timeline l'utilise{3} et ser{4} supprimé{5}. Le fichier reste sur ton disque.", m.name, n, n > 1 ? 's' : '', n > 1 ? 'nt' : '', n > 1 ? 'ont' : 'a', n > 1 ? 's' : '')
+        : T('Retirer « {0} » du projet ? Le fichier reste sur ton disque.', m.name),
     );
     if (ok) dispatch({ type: 'REMOVE_MEDIA', id: m.id });
   }
 
   function addAtPlayhead(m) {
     dispatch({ type: 'ADD_CLIP', mediaId: m.id, start: time });
-    onNotice?.({ kind: 'ok', text: `« ${m.name} » ajouté à la tête de lecture` });
+    onNotice?.({ kind: 'ok', text: T('« {0} » ajouté à la tête de lecture', m.name) });
   }
 
   // Click: this one. Ctrl + click: adds it after the others (or takes it out). Shift + click: all from the last clicked.
@@ -145,7 +152,7 @@ export default function MediaBin({ proxies = {}, media, clips = [], time = 0, di
 
   function addPicked() {
     dispatch({ type: 'ADD_CLIPS', mediaIds: usable, link });
-    onNotice?.({ kind: 'ok', text: `${usable.length} média${usable.length > 1 ? 's' : ''} ajouté${usable.length > 1 ? 's' : ''} à la suite, dans l’ordre choisi` });
+    onNotice?.({ kind: 'ok', text: T('{0} média{1} ajouté{2} à la suite, dans l’ordre choisi', usable.length, usable.length > 1 ? 's' : '', usable.length > 1 ? 's' : '') });
     setPicked([]);
   }
 
@@ -188,21 +195,20 @@ export default function MediaBin({ proxies = {}, media, clips = [], time = 0, di
   }
 
   const count = (type) => media.filter((m) => type === 'all' || m.type === type).length;
-  const importItem = { id: 'import', label: busy ? 'Chargement…' : 'Importer', onClick: () => !busy && addResults(api.importMedia()) };
+  const importItem = { id: 'import', label: busy ? T('Chargement…') : T('Importer'), onClick: () => !busy && addResults(api.importMedia()) };
   const menu = audio
     ? [
         importItem,
-        { id: 'audio', label: 'Tes sons', count: count('audio') },
-        { id: 'music', label: 'Musique', children: GENRES.map(([id, label]) => ({ id: `music:${id}`, label })) },
-        { id: 'sfx', label: 'Bruitages', title: 'Whoosh, clics, impacts, ambiances, créés par Cupkata et libres d’usage' },
-        { id: 'itunes', label: 'iTunes / Apple', title: 'Tes achats iTunes / Apple Music téléchargés sur ce PC' },
-        { id: 'ai', label: 'Musique IA', title: 'Créer une musique à partir d’une description, sur ton ordinateur' },
-        { id: 'voice', label: 'Voix off', onClick: onVoiceover, title: 'Enregistrer ta voix au micro à partir de la tête de lecture' },
+        { id: 'audio', label: T('Tes sons'), count: count('audio') },
+        { id: 'music', label: T('Musique'), children: GENRES.map(([id, label]) => ({ id: `music:${id}`, label })) },
+        { id: 'ai', label: T('Musique IA'), title: T('Créer une musique à partir d’une description, sur ton ordinateur') },
+        { id: 'sfx', label: T('Effets sonores'), children: SOUND_MENU },
+        { id: 'voice', label: T('Voix off'), onClick: onVoiceover, title: T('Enregistrer ta voix au micro à partir de la tête de lecture') },
       ]
     : [
         importItem,
-        { id: 'yours', label: 'Tes médias', children: KINDS.map(([id, label]) => ({ id, label, count: count(id) })) },
-        { id: 'slideshow', label: 'Diaporama', title: 'Créer un diaporama qui se répète jusqu’à la fin de la musique' },
+        { id: 'yours', label: T('Tes médias'), children: KINDS.map(([id, label]) => ({ id, label, count: count(id) })) },
+        { id: 'slideshow', label: T('Diaporama'), title: T('Créer un diaporama qui se répète jusqu’à la fin de la musique') },
       ];
   const pool = count(kind);
 
@@ -213,10 +219,8 @@ export default function MediaBin({ proxies = {}, media, clips = [], time = 0, di
       <SlideshowPanel media={media} clips={clips} dispatch={dispatch} onNotice={onNotice} />
     ) : kind.startsWith('music:') ? (
       <MusicBrowser genre={kind.slice(6)} time={time} dispatch={dispatch} onNotice={onNotice} />
-    ) : kind === 'sfx' ? (
-      <SfxPanel media={media} time={time} dispatch={dispatch} onNotice={onNotice} />
-    ) : kind === 'itunes' ? (
-      <LibraryPanel media={media} time={time} dispatch={dispatch} onNotice={onNotice} />
+    ) : kind.startsWith('sfx:') ? (
+      <SfxPanel group={kind.slice(4)} media={media} time={time} dispatch={dispatch} onNotice={onNotice} />
     ) : kind === 'ai' ? (
       <AiMusicPanel time={time} dispatch={dispatch} onNotice={onNotice} />
     ) : (
@@ -225,14 +229,14 @@ export default function MediaBin({ proxies = {}, media, clips = [], time = 0, di
         <input
           className="bin-search"
           type="search"
-          placeholder={audio ? 'Rechercher un son…' : 'Rechercher un média…'}
+          placeholder={audio ? T('Rechercher un son…') : T('Rechercher un média…')}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => e.key === 'Escape' && setQuery('')}
         />
         <div className="bin-filters">
-          <span className="muted bin-count">{shown.length === pool ? `${pool} élément${pool > 1 ? 's' : ''}` : `${shown.length} sur ${pool}`}</span>
-          <select className="bin-sort" value={sort} onChange={(e) => setSort(e.target.value)} title="Trier">
+          <span className="muted bin-count">{shown.length === pool ? T('{0} élément{1}', pool, pool > 1 ? 's' : '') : `${shown.length} sur ${pool}`}</span>
+          <select className="bin-sort" value={sort} onChange={(e) => setSort(e.target.value)} title={T('Trier')}>
             {SORTS.map(([id, label]) => (
               <option key={id} value={id}>
                 {label}
@@ -255,7 +259,7 @@ export default function MediaBin({ proxies = {}, media, clips = [], time = 0, di
         onDrop={onDrop}
       >
         {errors.length > 0 && (
-          <div className="bin-errors" onClick={() => setErrors([])} title="Cliquer pour fermer">
+          <div className="bin-errors" onClick={() => setErrors([])} title={T('Cliquer pour fermer')}>
             {errors.map((e) => (
               <div key={e.path}>
                 {e.name} : {e.error}
@@ -266,33 +270,33 @@ export default function MediaBin({ proxies = {}, media, clips = [], time = 0, di
 
         {usable.length > 0 && (
           <div className="bin-picked">
-            <span>{usable.length} sélectionné{usable.length > 1 ? 's' : ''}</span>
-            <button className="btn primary" onClick={addPicked} title="Ajoute-les à la fin de la timeline, dans l’ordre des numéros">
-              + À la timeline
+            <span>{usable.length} {T('sélectionné')}{usable.length > 1 ? 's' : ''}</span>
+            <button className="btn primary" onClick={addPicked} title={T('Ajoute-les à la fin de la timeline, dans l’ordre des numéros')}>
+             {T('+ À la timeline')}
             </button>
-            <button className="btn ghost" onClick={() => setPicked(shown.filter((m) => !m.missing).map((m) => m.id))} title="Sélectionner tout ce qui est affiché">
-              Tout
+            <button className="btn ghost" onClick={() => setPicked(shown.filter((m) => !m.missing).map((m) => m.id))} title={T('Sélectionner tout ce qui est affiché')}>
+             {T('Tout')}
             </button>
-            <button className="btn ghost" onClick={() => setPicked((p) => [...p].reverse())} title="Inverser l’ordre d’ajout">
-              ⇄
+            <button className="btn ghost" onClick={() => setPicked((p) => [...p].reverse())} title={T('Inverser l’ordre d’ajout')}>
+              <ArrowUpDown />
             </button>
-            <button className="btn ghost" onClick={() => setPicked([])} title="Tout désélectionner" aria-label="Tout désélectionner">
-              ✕
+            <button className="btn ghost" onClick={() => setPicked([])} title={T('Tout désélectionner')} aria-label={T('Tout désélectionner')}>
+              <X />
             </button>
           </div>
         )}
         {pool === 0 ? (
           <div className="bin-empty">
-            <div className="bin-empty-icon">⇪</div>
+            <div className="bin-empty-icon"><Upload /></div>
             {audio
-              ? 'Glisse ici tes musiques et sons (MP3, WAV…), clique sur Importer, ou enregistre ta voix avec Voix off.'
-              : 'Glisse tes vidéos, photos ou musiques ici, ou clique sur Importer.'}
+              ? T('Glisse ici tes musiques et sons (MP3, WAV…), clique sur Importer, ou enregistre ta voix avec Voix off.')
+              : T('Glisse tes vidéos, photos ou musiques ici, ou clique sur Importer.')}
           </div>
         ) : shown.length === 0 ? (
           <div className="bin-empty">
-            Aucun média ne correspond.
+           {T('Aucun média ne correspond.')}
             <button className="btn ghost" onClick={() => { setQuery(''); setKind(audio ? 'audio' : 'all'); }}>
-              Tout afficher
+             {T('Tout afficher')}
             </button>
           </div>
         ) : (
@@ -302,7 +306,7 @@ export default function MediaBin({ proxies = {}, media, clips = [], time = 0, di
                 key={m.id}
                 className={`bin-item ${m.missing ? 'missing' : ''} ${picked.includes(m.id) ? 'picked' : ''}`}
                 draggable={!m.missing}
-                title={m.missing ? `${m.name}\nFichier introuvable : clique pour le retrouver` : `${m.name}\nDouble-clic pour ajouter à la timeline · Ctrl + clic ou Maj + clic pour en sélectionner plusieurs`}
+                title={m.missing ? T('{0} Fichier introuvable : clique pour le retrouver', m.name) : T('{0} Double-clic pour ajouter à la timeline · Ctrl + clic ou Maj + clic pour en sélectionner plusieurs', m.name)}
                 onClick={async (e) => {
                   if (!m.missing) {
                     pick(e, m);
@@ -327,15 +331,15 @@ export default function MediaBin({ proxies = {}, media, clips = [], time = 0, di
                   <BinThumb m={m} proxy={proxies[m.path]} />
                   {picked.includes(m.id) && <span className="bin-order">{picked.indexOf(m.id) + 1}</span>}
                   {uses.get(m.id) > 0 && (
-                    <span className="bin-used" title={`Utilisé ${uses.get(m.id)} fois dans la timeline`}>
-                      ✓ {uses.get(m.id)}
+                    <span className="bin-used" title={T('Utilisé {0} fois dans la timeline', uses.get(m.id))}>
+                      <Check /> {uses.get(m.id)}
                     </span>
                   )}
                   <div className="bin-actions">
                     {!m.missing && (
                       <button
                         className="bin-act add"
-                        title="Ajouter à la tête de lecture"
+                        title={T('Ajouter à la tête de lecture')}
                         onClick={(e) => {
                           e.stopPropagation();
                           addAtPlayhead(m);
@@ -347,20 +351,20 @@ export default function MediaBin({ proxies = {}, media, clips = [], time = 0, di
                     )}
                     <button
                       className="bin-act remove"
-                      title="Retirer du projet (le fichier reste sur ton disque)"
+                      title={T('Retirer du projet (le fichier reste sur ton disque)')}
                       onClick={(e) => {
                         e.stopPropagation();
                         remove(m);
                       }}
                       onDoubleClick={(e) => e.stopPropagation()}
                     >
-                      ✕
+                      <X />
                     </button>
                   </div>
                 </div>
                 <div className="bin-name">
                   {m.name}
-                  {audio && <span className="bin-meta">{formatShort(m.duration)}{uses.get(m.id) ? ` · utilisé ${uses.get(m.id)}×` : ''}</span>}
+                  {audio && <span className="bin-meta">{formatShort(m.duration)}{uses.get(m.id) ? T('· utilisé {0}×', uses.get(m.id)) : ''}</span>}
                 </div>
               </div>
             ))}

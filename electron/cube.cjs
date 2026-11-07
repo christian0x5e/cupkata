@@ -1,4 +1,5 @@
 // Reads a .cube 3D LUT (the common format for colour filters) and resamples it to 33×33×33.
+const { T } = require('./i18n.cjs');
 const TARGET = 33;
 const MAX_BYTES = 30 * 1024 * 1024;
 
@@ -13,7 +14,7 @@ function parseCube(text) {
     const parts = line.split(/\s+/);
     const key = parts[0].toUpperCase();
     if (key === 'TITLE') continue;
-    if (key === 'LUT_1D_SIZE') throw new Error("Ce fichier est un filtre 1D : seuls les filtres 3D (.cube) sont pris en charge");
+    if (key === 'LUT_1D_SIZE') throw new Error(T('Ce fichier est un filtre 1D : seuls les filtres 3D (.cube) sont pris en charge'));
     if (key === 'LUT_3D_SIZE') {
       size = Number(parts[1]);
       continue;
@@ -28,11 +29,11 @@ function parseCube(text) {
     }
     if (/^[A-Z_]+$/.test(key)) continue;
     const rgb = parts.slice(0, 3).map(Number);
-    if (rgb.length !== 3 || !rgb.every(Number.isFinite)) throw new Error('Ligne de couleur illisible dans le fichier .cube');
+    if (rgb.length !== 3 || !rgb.every(Number.isFinite)) throw new Error(T('Ligne de couleur illisible dans le fichier .cube'));
     values.push(rgb);
   }
-  if (!Number.isInteger(size) || size < 2 || size > 128) throw new Error('Taille de filtre manquante ou invalide (LUT_3D_SIZE)');
-  if (values.length !== size ** 3) throw new Error(`Le fichier annonce ${size ** 3} couleurs mais en contient ${values.length}`);
+  if (!Number.isInteger(size) || size < 2 || size > 128) throw new Error(T('Taille de filtre manquante ou invalide (LUT_3D_SIZE)'));
+  if (values.length !== size ** 3) throw new Error(T('Le fichier annonce {0} couleurs mais en contient {1}', size ** 3, values.length));
   const range = max.map((m, i) => m - min[i] || 1);
   return { size, values: values.map((rgb) => rgb.map((v, i) => (v - min[i]) / range[i])) };
 }
@@ -58,7 +59,7 @@ function sample({ size, values }, r, g, b) {
 }
 
 function cubeToLut(text) {
-  if (text.length > MAX_BYTES) throw new Error('Fichier .cube trop volumineux');
+  if (text.length > MAX_BYTES) throw new Error(T('Fichier .cube trop volumineux'));
   const cube = parseCube(text);
   const data = [];
   for (let b = 0; b < TARGET; b++) {

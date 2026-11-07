@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { X } from './icons.jsx';
+import { T } from '../i18n.js';
 
 const api = window.cupkata;
 
@@ -19,7 +21,7 @@ export default function TemplatesModal({ open, selectedCount, onClose, onSave, o
   return (
     <div className="modal-backdrop">
       <div className="modal">
-        <h2>Modèles de projet</h2>
+        <h2>{T('Modèles de projet')}</h2>
         {list.length > 0 ? (
           <div className="template-list">
             {list.map((t) => (
@@ -28,37 +30,37 @@ export default function TemplatesModal({ open, selectedCount, onClose, onSave, o
                   <strong>{t.name}</strong>
                   <p className="muted">
                     {t.settings.ratio}, {t.settings.resolution}
-                    {t.clips.length > 0 ? `, intro de ${t.clips.length} clip${t.clips.length > 1 ? 's' : ''}` : ''}
+                    {t.clips.length > 0 ? T(', intro de {0} clip{1}', t.clips.length, t.clips.length > 1 ? 's' : '') : ''}
                   </p>
                 </div>
                 <button className="btn primary" onClick={() => onUse(t)}>
-                  Utiliser
+                 {T('Utiliser')}
                 </button>
-                <button className="btn ghost" title="Supprimer ce modèle" onClick={() => api.deleteTemplate(t.id).then(setList, onError)}>
-                  ✕
+                <button className="btn ghost" title={T('Supprimer ce modèle')} onClick={() => api.deleteTemplate(t.id).then(setList, onError)}>
+                  <X />
                 </button>
               </div>
             ))}
           </div>
         ) : (
-          <p className="muted">Aucun modèle pour l’instant.</p>
+          <p className="muted">{T('Aucun modèle pour l’instant.')}</p>
         )}
         <div className="form template-new">
           <label className="field">
-            <span>Enregistrer le projet actuel comme modèle</span>
-            <input type="text" maxLength={60} placeholder="Nom du modèle" value={name} onChange={(e) => setName(e.target.value)} />
+            <span>{T('Enregistrer le projet actuel comme modèle')}</span>
+            <input type="text" maxLength={60} placeholder={T('Nom du modèle')} value={name} onChange={(e) => setName(e.target.value)} />
           </label>
           <label className="toggle">
             <input type="checkbox" checked={withIntro} disabled={!selectedCount} onChange={(e) => setWithIntro(e.target.checked)} />
             {selectedCount
-              ? `Garder les ${selectedCount} clip${selectedCount > 1 ? 's' : ''} sélectionné${selectedCount > 1 ? 's' : ''} comme intro`
-              : 'Sélectionne des clips pour les garder comme intro'}
+              ? T('Garder les {0} clip{1} sélectionné{2} comme intro', selectedCount, selectedCount > 1 ? 's' : '', selectedCount > 1 ? 's' : '')
+              : T('Sélectionne des clips pour les garder comme intro')}
           </label>
-          <p className="hint">Un modèle retient le format, la résolution, le volume uniforme et le style des sous-titres.</p>
+          <p className="hint">{T('Un modèle retient le format, la résolution, le volume uniforme et le style des sous-titres.')}</p>
         </div>
         <div className="modal-actions">
           <button className="btn" onClick={onClose}>
-            Fermer
+           {T('Fermer')}
           </button>
           <button
             className="btn primary"
@@ -71,7 +73,7 @@ export default function TemplatesModal({ open, selectedCount, onClose, onSave, o
               }
             }}
           >
-            Enregistrer
+           {T('Enregistrer')}
           </button>
         </div>
       </div>

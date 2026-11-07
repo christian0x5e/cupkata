@@ -1,14 +1,15 @@
 // Stickers and shapes live on the text track: they move, resize, animate and export like a text.
 // Sizes follow the style's size (px), so they keep their proportions in any format.
+import { T } from './i18n.js';
 export const SHAPES = [
-  { id: 'arrow', name: 'Flèche' },
-  { id: 'ring', name: 'Cercle' },
-  { id: 'frame', name: 'Cadre' },
-  { id: 'band', name: 'Bandeau' },
-  { id: 'line', name: 'Trait' },
-  { id: 'star', name: 'Étoile' },
-  { id: 'heart', name: 'Cœur' },
-  { id: 'progress', name: 'Barre de progression' },
+  { id: 'arrow', name: T('Flèche') },
+  { id: 'ring', name: T('Cercle') },
+  { id: 'frame', name: T('Cadre') },
+  { id: 'band', name: T('Bandeau') },
+  { id: 'line', name: T('Trait') },
+  { id: 'star', name: T('Étoile') },
+  { id: 'heart', name: T('Cœur') },
+  { id: 'progress', name: T('Barre de progression') },
 ];
 export const STICKER_IDS = SHAPES.map((s) => s.id);
 export const EMOJIS = ['🔥', '😂', '😍', '😱', '👍', '👉', '❤️', '⭐', '✅', '❌', '💯', '🎉', '💡', '⚠️', '🎵', '🚀'];

@@ -1,4 +1,5 @@
 // Dated copies of a project, so an older version can always be reopened.
+const { T } = require('./i18n.cjs');
 const fs = require('fs');
 const path = require('path');
 
@@ -12,7 +13,7 @@ const stamp = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDat
 
 async function keepBackup(dir, name, content, { keep = KEEP, now = new Date() } = {}) {
   await fs.promises.mkdir(dir, { recursive: true });
-  const safe = name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').slice(0, 80) || 'Sans titre';
+  const safe = name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').slice(0, 80) || T('Sans titre');
   const file = path.join(dir, `${safe} ${stamp(now)}.cupkata`);
   await fs.promises.writeFile(file, content, 'utf8');
   await prune(dir, keep);

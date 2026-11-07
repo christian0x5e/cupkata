@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { T } from '../i18n.js';
 
 const SEGMENTS = 14;
 const FLOOR_DB = -48;
@@ -39,7 +40,7 @@ export default function VuMeter({ read }) {
   }, [read]);
 
   return (
-    <div className="vu" title="Niveau du son (gauche / droite)">
+    <div className="vu" title={T('Niveau du son (gauche / droite)')}>
       {[0, 1].map((ch) => (
         <div key={ch} className="vu-col" ref={(el) => (cols.current[ch] = el)}>
           {Array.from({ length: SEGMENTS }, (_, i) => (

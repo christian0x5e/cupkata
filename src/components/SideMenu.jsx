@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ChevronDown, ChevronUp } from './icons.jsx';
 
 // Column of categories on the left of a tab (like "Importer / Tes médias / Musique…").
 // items: [{ id, label, count?, onClick?, children?: [{ id, label, count? }] }]. An item with
@@ -23,7 +24,7 @@ export default function SideMenu({ items, value, onChange }) {
             <div key={item.id} className="side-group">
               <button className={`side-item ${inside ? 'active' : ''}`} onClick={() => toggle(item.id)} aria-expanded={expanded}>
                 <span>{item.label}</span>
-                <span className="side-caret">{expanded ? '▴' : '▾'}</span>
+                <span className="side-caret">{expanded ? <ChevronUp /> : <ChevronDown />}</span>
               </button>
               {expanded &&
                 item.children.map((c) => (

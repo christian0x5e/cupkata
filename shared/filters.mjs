@@ -138,6 +138,7 @@ export const PRESETS = [
   { id: 'cyberpunk', name: 'Cyberpunk', cat: 'Nuit', p: { sat: 0.3, con: 0.3, sh: [...magenta, 0.2], hl: [...cyan, 0.18], exp: -0.1 } },
   { id: 'vision', name: 'Vision nocturne', cat: 'Nuit', p: { bw: [0.3, 0.59, 0.11], duo: [[0, 0.06, 0], [0.55, 1, 0.45]], con: 0.2 } },
   { id: 'lanterne', name: 'Lanterne', cat: 'Nuit', p: { temp: 0.6, exp: -0.3, con: 0.3, sh: [0.15, 0.15, 0.35, 0.15] } },
+  { id: 'aurore', name: 'Aurore boréale', cat: 'Nuit', p: { exp: -0.08, tint: -0.15, vib: 0.35, con: 0.18, sh: [0.1, 0.6, 0.45, 0.16], hl: [0.7, 0.45, 1, 0.12] } },
 
   { id: 'plage', name: 'Plage', cat: 'Voyage', p: { exp: 0.15, temp: 0.12, tint: -0.08, vib: 0.35, hl: [...cyan, 0.06] } },
   { id: 'montagne', name: 'Montagne', cat: 'Voyage', p: { temp: -0.15, con: 0.18, vib: 0.25, curve: 0.15 } },
@@ -285,8 +286,3 @@ export function buildLut(p, size = LUT_SIZE) {
   return data;
 }
 
-export function toCube(data, size, title = 'Cupkata') {
-  const lines = [`TITLE "${title.replace(/"/g, '')}"`, `LUT_3D_SIZE ${size}`, 'DOMAIN_MIN 0 0 0', 'DOMAIN_MAX 1 1 1'];
-  for (let i = 0; i < data.length; i += 3) lines.push(`${data[i].toFixed(6)} ${data[i + 1].toFixed(6)} ${data[i + 2].toFixed(6)}`);
-  return lines.join('\n') + '\n';
-}

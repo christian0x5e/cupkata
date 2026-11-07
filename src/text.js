@@ -1,4 +1,5 @@
 import { drawShape, shapeSize } from './stickers.js';
+import { T } from './i18n.js';
 
 export const FONTS = [
   'Segoe UI', 'Arial', 'Arial Black', 'Impact', 'Georgia', 'Verdana', 'Trebuchet MS', 'Comic Sans MS', 'Consolas',
@@ -42,46 +43,46 @@ export const textStyle = (c) => ({ ...DEFAULT_TEXT_STYLE, ...(c.style || {}) });
 
 // Ready-made looks: they change the appearance, never the position, size or rotation.
 export const TEXT_PRESETS = [
-  { id: 'classique', name: 'Classique', style: { font: 'Segoe UI', bold: true, color: '#ffffff', outline: true, outlineColor: '#000000' } },
-  { id: 'soustitre', name: 'Sous-titre', style: { font: 'Segoe UI', bold: true, color: '#ffffff', outline: false, box: true, boxColor: '#000000', boxOpacity: 0.6 } },
-  { id: 'jaune', name: 'Jaune vidéo', style: { font: 'Arial Black', bold: true, color: '#ffe000', outline: true, outlineColor: '#000000', outlineWidth: 0.16, upper: true } },
-  { id: 'impact', name: 'Gros titre', style: { font: 'Impact', bold: false, color: '#ffffff', outline: true, outlineColor: '#000000', outlineWidth: 0.1, upper: true, shadow: true } },
-  { id: 'neonrose', name: 'Néon rose', style: { font: 'Segoe UI', bold: true, color: '#ffe6f3', outline: false, glow: true, glowColor: '#ff2d95' } },
-  { id: 'neonbleu', name: 'Néon bleu', style: { font: 'Bahnschrift', bold: true, color: '#e6fbff', outline: false, glow: true, glowColor: '#22c8ff' } },
-  { id: 'bulle', name: 'Bulle', style: { font: 'Segoe UI', bold: true, color: '#111111', outline: false, box: true, boxColor: '#ffffff', boxOpacity: 1 } },
-  { id: 'etiquette', name: 'Étiquette', style: { font: 'Arial Black', bold: true, color: '#ffffff', outline: false, box: true, boxColor: '#ff3b6b', boxOpacity: 1, upper: true } },
-  { id: 'alerte', name: 'Alerte', style: { font: 'Arial Black', bold: true, color: '#ffffff', outline: false, box: true, boxColor: '#d40000', boxOpacity: 0.95, upper: true, spacing: 0.04 } },
-  { id: 'elegant', name: 'Élégant', style: { font: 'Georgia', bold: false, italic: true, color: '#fff4e0', outline: false, shadow: true, spacing: 0.02 } },
-  { id: 'manuscrit', name: 'Manuscrit', style: { font: 'Segoe Script', bold: false, color: '#ffffff', outline: false, shadow: true } },
-  { id: 'coucher', name: 'Coucher de soleil', style: { font: 'Arial Black', bold: true, color: '#ffd166', gradient: '#ff3d77', outline: false, shadow: true } },
-  { id: 'ocean', name: 'Océan', style: { font: 'Arial Black', bold: true, color: '#a0f0ff', gradient: '#2b6cff', outline: true, outlineColor: '#06213f', outlineWidth: 0.08 } },
-  { id: 'or', name: 'Or', style: { font: 'Georgia', bold: true, color: '#fff2b0', gradient: '#c08a1e', outline: true, outlineColor: '#3a2500', outlineWidth: 0.06, shadow: true } },
-  { id: 'retro', name: 'Rétro', style: { font: 'Impact', bold: false, color: '#ffef5a', outline: true, outlineColor: '#ff3b8d', outlineWidth: 0.14, shadow: true, shadowColor: '#3b0b6b' } },
-  { id: 'machine', name: 'Machine à écrire', style: { font: 'Consolas', bold: false, color: '#f2f2f2', outline: false, box: true, boxColor: '#111111', boxOpacity: 0.75 } },
+  { id: 'classique', name: T('Classique'), style: { font: 'Segoe UI', bold: true, color: '#ffffff', outline: true, outlineColor: '#000000' } },
+  { id: 'soustitre', name: T('Sous-titre'), style: { font: 'Segoe UI', bold: true, color: '#ffffff', outline: false, box: true, boxColor: '#000000', boxOpacity: 0.6 } },
+  { id: 'jaune', name: T('Jaune vidéo'), style: { font: 'Arial Black', bold: true, color: '#ffe000', outline: true, outlineColor: '#000000', outlineWidth: 0.16, upper: true } },
+  { id: 'impact', name: T('Gros titre'), style: { font: 'Impact', bold: false, color: '#ffffff', outline: true, outlineColor: '#000000', outlineWidth: 0.1, upper: true, shadow: true } },
+  { id: 'neonrose', name: T('Néon rose'), style: { font: 'Segoe UI', bold: true, color: '#ffe6f3', outline: false, glow: true, glowColor: '#ff2d95' } },
+  { id: 'neonbleu', name: T('Néon bleu'), style: { font: 'Bahnschrift', bold: true, color: '#e6fbff', outline: false, glow: true, glowColor: '#22c8ff' } },
+  { id: 'bulle', name: T('Bulle'), style: { font: 'Segoe UI', bold: true, color: '#111111', outline: false, box: true, boxColor: '#ffffff', boxOpacity: 1 } },
+  { id: 'etiquette', name: T('Étiquette'), style: { font: 'Arial Black', bold: true, color: '#ffffff', outline: false, box: true, boxColor: '#ff3b6b', boxOpacity: 1, upper: true } },
+  { id: 'alerte', name: T('Alerte'), style: { font: 'Arial Black', bold: true, color: '#ffffff', outline: false, box: true, boxColor: '#d40000', boxOpacity: 0.95, upper: true, spacing: 0.04 } },
+  { id: 'elegant', name: T('Élégant'), style: { font: 'Georgia', bold: false, italic: true, color: '#fff4e0', outline: false, shadow: true, spacing: 0.02 } },
+  { id: 'manuscrit', name: T('Manuscrit'), style: { font: 'Segoe Script', bold: false, color: '#ffffff', outline: false, shadow: true } },
+  { id: 'coucher', name: T('Coucher de soleil'), style: { font: 'Arial Black', bold: true, color: '#ffd166', gradient: '#ff3d77', outline: false, shadow: true } },
+  { id: 'ocean', name: T('Océan'), style: { font: 'Arial Black', bold: true, color: '#a0f0ff', gradient: '#2b6cff', outline: true, outlineColor: '#06213f', outlineWidth: 0.08 } },
+  { id: 'or', name: T('Or'), style: { font: 'Georgia', bold: true, color: '#fff2b0', gradient: '#c08a1e', outline: true, outlineColor: '#3a2500', outlineWidth: 0.06, shadow: true } },
+  { id: 'retro', name: T('Rétro'), style: { font: 'Impact', bold: false, color: '#ffef5a', outline: true, outlineColor: '#ff3b8d', outlineWidth: 0.14, shadow: true, shadowColor: '#3b0b6b' } },
+  { id: 'machine', name: T('Machine à écrire'), style: { font: 'Consolas', bold: false, color: '#f2f2f2', outline: false, box: true, boxColor: '#111111', boxOpacity: 0.75 } },
   { id: 'minimal', name: 'Minimal', style: { font: 'Segoe UI', bold: false, color: '#ffffff', outline: false, shadow: true, spacing: 0.08, upper: true } },
   { id: 'gaming', name: 'Gaming', style: { font: 'Bahnschrift', bold: true, color: '#b6ff3b', outline: true, outlineColor: '#0a2a00', outlineWidth: 0.1, glow: true, glowColor: '#5cff2e', upper: true } },
-  { id: 'citation', name: 'Citation', style: { font: 'Palatino Linotype', bold: false, italic: true, color: '#ffffff', outline: false, box: true, boxColor: '#1d1d2b', boxOpacity: 0.7 } },
-  { id: 'bd', name: 'Bande dessinée', style: { font: 'Comic Sans MS', bold: true, color: '#ffffff', outline: true, outlineColor: '#000000', outlineWidth: 0.18, shadow: true, shadowColor: '#ff3b3b' } },
+  { id: 'citation', name: T('Citation'), style: { font: 'Palatino Linotype', bold: false, italic: true, color: '#ffffff', outline: false, box: true, boxColor: '#1d1d2b', boxOpacity: 0.7 } },
+  { id: 'bd', name: T('Bande dessinée'), style: { font: 'Comic Sans MS', bold: true, color: '#ffffff', outline: true, outlineColor: '#000000', outlineWidth: 0.18, shadow: true, shadowColor: '#ff3b3b' } },
 ];
 
 export const TEXT_ANIMS_IN = [
-  ['none', 'Aucune'], ['fade', 'Fondu'], ['up', 'Monte'], ['down', 'Descend'], ['left', 'Glisse depuis la gauche'],
-  ['right', 'Glisse depuis la droite'], ['pop', 'Pop'], ['zoom', 'Zoom'], ['type', 'Machine à écrire'], ['spin', 'Tourbillon'],
+  ['none', T('Aucune')], ['fade', T('Fondu')], ['up', T('Monte')], ['down', T('Descend')], ['left', T('Glisse depuis la gauche')],
+  ['right', T('Glisse depuis la droite')], ['pop', T('Pop')], ['zoom', T('Zoom')], ['type', T('Machine à écrire')], ['spin', T('Tourbillon')],
 ];
 export const TEXT_ANIMS_OUT = [
-  ['none', 'Aucune'], ['fade', 'Fondu'], ['up', 'Part vers le haut'], ['down', 'Part vers le bas'], ['zoom', 'Zoom'], ['shrink', 'Rétrécit'],
+  ['none', T('Aucune')], ['fade', T('Fondu')], ['up', T('Part vers le haut')], ['down', T('Part vers le bas')], ['zoom', T('Zoom')], ['shrink', T('Rétrécit')],
 ];
 export const TEXT_ANIMS_LOOP = [
-  ['none', 'Aucune'], ['pulse', 'Pulsation'], ['float', 'Flottement'], ['shake', 'Tremblement'], ['swing', 'Balancement'], ['blink', 'Clignotement'],
+  ['none', T('Aucune')], ['pulse', T('Pulsation')], ['float', T('Flottement')], ['shake', T('Tremblement')], ['swing', T('Balancement')], ['blink', T('Clignotement')],
 ];
 
 export const DEFAULT_TEXT_ANIM = { in: 'none', out: 'none', loop: 'none', duration: 0.5 };
 export const textAnim = (c) => ({ ...DEFAULT_TEXT_ANIM, ...(c.anim || {}) });
 // The spoken word stands out in a subtitle whose words have their times.
 export const KARAOKE_MODES = [
-  ['color', 'Le mot change de couleur'],
-  ['box', 'Le mot sur un fond coloré'],
-  ['pop', 'Le mot grossit et change de couleur'],
+  ['color', T('Le mot change de couleur')],
+  ['box', T('Le mot sur un fond coloré')],
+  ['pop', T('Le mot grossit et change de couleur')],
 ];
 const POP_TIME = 0.12;
 export const hasKaraoke = (c) => !!c.karaoke && (c.words?.length ?? 0) > 0;
@@ -180,15 +181,15 @@ export function layoutText(ctx, clip, W, H) {
 
 // Speech bubbles drawn behind the whole text block.
 export const BUBBLES = [
-  ['none', 'Aucune'], ['round', 'Arrondie'], ['speech', 'Dialogue'], ['thought', 'Pensée'], ['shout', 'Cri'],
-  ['ellipse', 'Ovale'], ['banner', 'Bannière'], ['tag', 'Étiquette'], ['note', 'Note'],
+  ['none', T('Aucune')], ['round', T('Arrondie')], ['speech', 'Dialogue'], ['thought', T('Pensée')], ['shout', T('Cri')],
+  ['ellipse', T('Ovale')], ['banner', T('Bannière')], ['tag', T('Étiquette')], ['note', T('Note')],
 ];
 
 // One-click looks for the letters themselves.
 export const TEXT_EFFECTS = [
-  ['none', 'Aucun'], ['neon', 'Néon'], ['glitch', 'Glitch'], ['3d', '3D'], ['long', 'Ombre longue'], ['hollow', 'Creux'],
-  ['double', 'Double contour'], ['sticker', 'Autocollant'], ['retro', 'Rétro décalé'], ['echo', 'Écho'],
-  ['chrome', 'Chrome'], ['fire', 'Feu'], ['ice', 'Glace'], ['rainbow', 'Arc-en-ciel'],
+  ['none', T('Aucun')], ['neon', T('Néon')], ['glitch', 'Glitch'], ['3d', '3D'], ['long', T('Ombre longue')], ['hollow', T('Creux')],
+  ['double', T('Double contour')], ['sticker', T('Autocollant')], ['retro', T('Rétro décalé')], ['echo', T('Écho')],
+  ['chrome', 'Chrome'], ['fire', T('Feu')], ['ice', T('Glace')], ['rainbow', T('Arc-en-ciel')],
 ];
 
 // Bubble half-size around a laid-out block (the tail of "speech" and "thought" goes below).

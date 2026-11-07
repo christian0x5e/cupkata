@@ -1,6 +1,6 @@
 {
   "name": "cupkata",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "Cupkata - editeur video de bureau",
   "main": "electron/main.cjs",
@@ -22,6 +22,7 @@
     "cross-env": "^7.0.3",
     "electron": "^45.2.1",
     "electron-builder": "^26.18.0",
+    "lucide-react": "1.69.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "vite": "^8.3.5",
@@ -36,7 +37,8 @@
     "onnxruntime-node@1.30.0": true,
     "electron-winstaller@5.4.0": false
   },
-  "author": "Cupkata",
+  "author": "Cupkata contributors",
+  "license": "MIT",
   "build": {
     "appId": "local.cupkata.app",
     "productName": "Cupkata",

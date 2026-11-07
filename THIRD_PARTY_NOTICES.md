@@ -70,6 +70,7 @@ THE SOFTWARE.
 
 | Composant | Licence | Rôle |
 |---|---|---|
+| Lucide (`lucide-react`), https://lucide.dev | ISC | Toutes les icônes de l’interface |
 | Transformers.js (`@huggingface/transformers`) | Apache-2.0 | Exécute les modèles de reconnaissance vocale et de musique |
 | Whisper (OpenAI), versions ONNX de `onnx-community` | MIT | Modèle de reconnaissance vocale, téléchargé au premier usage |
 | MusicGen small (Meta), version ONNX `Xenova/musicgen-small` | CC BY-NC 4.0 (poids du modèle) | « Musique IA » : compose sur l'ordinateur, téléchargé au premier usage. Usage **non commercial** des musiques créées |
@@ -84,6 +85,20 @@ THE SOFTWARE.
 
 Les textes complets de ces licences se trouvent dans `node_modules/<paquet>/LICENSE`.
 
+## FFmpeg — licence GPL v3
+
+L'application installée contient les exécutables FFmpeg et FFprobe fournis par `ffmpeg-static` et `ffprobe-static`
+(FFmpeg 6.1.1, version « essentials » de https://www.gyan.dev, compilée avec `--enable-gpl --enable-version3`,
+dont x264, x265 et vidstab). Ces exécutables sont sous licence GNU GPL v3 ; Cupkata les lance comme des programmes
+séparés, son propre code reste sous licence MIT.
+
+- Code source de FFmpeg : https://github.com/FFmpeg/FFmpeg/commit/e38092ef93
+- Configuration de compilation et texte de la licence : `node_modules/ffmpeg-static/ffmpeg.exe.README`
+  et `ffmpeg.exe.LICENSE` (dans l'application installée : `resources\app.asar.unpacked\node_modules\ffmpeg-static`).
+
+FFmpeg est une marque de Fabrice Bellard. Les formats H.264, H.265 et AAC peuvent être couverts par des brevets
+dans certains pays.
+
 ## Musiques libres (onglet Audio › Musique)
 
 Cupkata interroge les interfaces publiques de ces bibliothèques ; il n'y a aucune musique dans l'application.
@@ -95,3 +110,19 @@ Chaque morceau garde sa propre licence Creative Commons, enregistrée dans un fi
 | Internet Archive (collection « netlabels ») — https://archive.org | Recherche et téléchargement |
 | ccMixter — https://ccmixter.org | Recherche ; le téléchargement se fait sur leur site (ils refusent les téléchargements par les applications) |
 | Openverse — https://openverse.org | Recherche et téléchargement, quand leur service répond |
+
+## Photos d'exemple (aperçus des transitions et des filtres)
+
+`src/samples/day.jpg` et `src/samples/night.jpg` sont recadrées à partir de « Spruit Sunrise » et « Shanghai Bund »,
+de Greg Zaal, publiées sur Poly Haven (https://polyhaven.com) sous licence CC0.
+
+## Effets sonores (onglet Audio › Effets sonores)
+
+Les sons de `shared/sounds` ont été générés avec Stable Audio 3 Small SFX. Le modèle n'est pas livré avec Cupkata.
+
+Powered by Stability AI.
+
+This Stability AI Model is licensed under the Stability AI Community License, Copyright © Stability AI Ltd. All Rights Reserved.
+
+Le texte de la licence est dans `shared/sounds/LICENSE-Stability-AI.md`. Son encodeur de texte T5Gemma relève des
+Gemma Terms of Use (`shared/sounds/LICENSE-Gemma.md`).

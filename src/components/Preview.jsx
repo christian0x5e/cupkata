@@ -7,7 +7,7 @@ import EFFECT_PARAMS from '../../shared/effects.json';
 
 const BGP = EFFECT_PARAMS.background;
 import { DEFAULT_RATIO, frameSize, RATIOS } from '../ratio.js';
-import { IconCamera, IconFullscreen, IconLoop, IconNextFrame, IconPrevFrame } from './icons.jsx';
+import { IconCamera, IconFullscreen, IconLoop, IconNextFrame, IconPause as Pause, IconPlay as Play, IconPrevFrame } from './icons.jsx';
 import { drawText } from '../text.js';
 import { drawTransition } from '../transitions.js';
 import { applyEffectItem, clipEffect, drawEffectOverlay, renderClipEffect } from '../effects.js';
@@ -31,6 +31,7 @@ function layerContext(key) {
   return c.getContext('2d');
 }
 import { formatTime } from '../format.js';
+import { T } from '../i18n.js';
 
 // Size of the preview picture: 720 pixels on its short side, the other one from the project's format.
 // Every drawing function reads these, so changing the format takes effect on the next frame.
@@ -134,9 +135,10 @@ export default function Preview({proxies, onShort,
       let el = pool.current.get(key);
       if (!el) {
         el = kind === 'image' ? new Image() : document.createElement(kind);
+        // Images too: a cross-origin picture taints the canvas, and the GPU filters then refuse it.
+        el.crossOrigin = 'anonymous';
         if (kind !== 'image') {
           el.preload = 'auto';
-          el.crossOrigin = 'anonymous';
           const gain = mixBus().ctx.createGain();
           mixBus().ctx.createMediaElementSource(el).connect(gain).connect(mixBus().input);
           gains.current.set(key, gain);
@@ -213,7 +215,7 @@ export default function Preview({proxies, onShort,
           c.fillStyle = '#8b919c';
           c.font = '28px "Segoe UI", sans-serif';
           c.textAlign = 'center';
-          c.fillText(`Média introuvable : ${m.name}`, W / 2, H / 2);
+          c.fillText(T('Média introuvable : {0}', m.name), W / 2, H / 2);
         };
       }
       const base = cssFilter(clip);
@@ -392,7 +394,7 @@ export default function Preview({proxies, onShort,
       try {
         render(t, p);
       } catch (err) {
-        if (window.cupkataLastPreviewError !== String(err)) console.error('Aperçu :', err);
+        if (window.cupkataLastPreviewError !== String(err)) console.error(T('Aperçu :'), err);
         window.cupkataLastPreviewError = String(err);
       }
       raf = requestAnimationFrame(frame);
@@ -482,8 +484,8 @@ export default function Preview({proxies, onShort,
           )}
           {clips.length === 0 && (
             <div className="preview-hint">
-              <strong>L'aperçu montre ta timeline</strong>
-              <span>Double-clique sur un média, ou glisse-le sur la timeline, pour le voir ici.</span>
+              <strong>{T("L'aperçu montre ta timeline")}</strong>
+              <span>{T('Double-clique sur un média, ou glisse-le sur la timeline, pour le voir ici.')}</span>
             </div>
           )}
         </div>
@@ -496,19 +498,19 @@ export default function Preview({proxies, onShort,
           <VuMeter read={readLevels} />
         </div>
         <div className="pc-center">
-          <button className="pc-btn" onClick={() => onStep(-1)} disabled={total <= 0} title="Image précédente (←)">
+          <button className="pc-btn" onClick={() => onStep(-1)} disabled={total <= 0} title={T('Image précédente (←)')}>
             <IconPrevFrame />
           </button>
-          <button className="play" onClick={onTogglePlay} disabled={total <= 0} aria-label={playing ? 'Pause' : 'Lecture'} title="Lecture / pause (Espace)">
-            {playing ? '❚❚' : '▶'}
+          <button className="play" onClick={onTogglePlay} disabled={total <= 0} aria-label={playing ? T('Pause') : T('Lecture')} title={T('Lecture / pause (Espace)')}>
+            {playing ? <Pause fill="currentColor" /> : <Play fill="currentColor" />}
           </button>
-          <button className="pc-btn" onClick={() => onStep(1)} disabled={total <= 0} title="Image suivante (→)">
+          <button className="pc-btn" onClick={() => onStep(1)} disabled={total <= 0} title={T('Image suivante (→)')}>
             <IconNextFrame />
           </button>
         </div>
         <div className="pc-right">
           <div className="ratio-wrap">
-            <button className={`pc-btn ratio-btn ${ratioOpen ? 'on' : ''}`} onClick={() => setRatioOpen((v) => !v)} title="Format de la vidéo (aperçu et export)">
+            <button className={`pc-btn ratio-btn ${ratioOpen ? 'on' : ''}`} onClick={() => setRatioOpen((v) => !v)} title={T('Format de la vidéo (aperçu et export)')}>
               {ratio}
             </button>
             {ratioOpen && (
@@ -532,21 +534,21 @@ export default function Preview({proxies, onShort,
                     onShort?.();
                     setRatioOpen(false);
                   }}
-                  title="Passe en 9:16 et recadre chaque clip de la piste principale sur son sujet"
+                  title={T('Passe en 9:16 et recadre chaque clip de la piste principale sur son sujet')}
                 >
-                  <span className="ratio-id">Short</span>
-                  <span className="ratio-hint">9:16 et recadrage auto</span>
+                  <span className="ratio-id">{T('Short')}</span>
+                  <span className="ratio-hint">{T('9:16 et recadrage auto')}</span>
                 </button>
               </div>
             )}
           </div>
-          <button className={`pc-btn ${loop ? 'on' : ''}`} onClick={onToggleLoop} title="Lecture en boucle (la zone de lecture si elle existe)">
+          <button className={`pc-btn ${loop ? 'on' : ''}`} onClick={onToggleLoop} title={T('Lecture en boucle (la zone de lecture si elle existe)')}>
             <IconLoop />
           </button>
-          <button className="pc-btn" onClick={snapshot} disabled={clips.length === 0} title="Capture de l'image : enregistrée en PNG et ajoutée aux médias">
+          <button className="pc-btn" onClick={snapshot} disabled={clips.length === 0} title={T("Capture de l'image : enregistrée en PNG et ajoutée aux médias")}>
             <IconCamera />
           </button>
-          <button className="pc-btn" onClick={toggleFullscreen} title={fullscreen ? 'Quitter le plein écran (Échap)' : 'Plein écran (double-clic sur l’image)'}>
+          <button className="pc-btn" onClick={toggleFullscreen} title={fullscreen ? T('Quitter le plein écran (Échap)') : T('Plein écran (double-clic sur l’image)')}>
             <IconFullscreen exit={fullscreen} />
           </button>
         </div>

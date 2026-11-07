@@ -1,6 +1,7 @@
 import { clipTransform, overlayBox } from '../project.js';
 import { textBox, textStyle } from '../text.js';
 import { transformPatch } from '../keyframes.js';
+import { T } from '../i18n.js';
 
 const SNAP = 0.015;
 
@@ -102,7 +103,7 @@ export default function OverlayBox({ clip, media, canvas, width, W, H, dispatch,
       className={`ov-box ${clip.track === 'text' ? 'text' : ''}`}
       style={style}
       onPointerDown={drag('move')}
-      title="Glisse pour déplacer · coins pour la taille · point du haut pour tourner (Maj : par 15°)"
+      title={T('Glisse pour déplacer · coins pour la taille · point du haut pour tourner (Maj : par 15°)')}
     >
       {['tl', 'tr', 'bl', 'br'].map((h) => (
         <div key={h} className={`ov-handle ${h}`} onPointerDown={drag('scale')} />

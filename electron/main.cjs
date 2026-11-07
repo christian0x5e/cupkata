@@ -1,3 +1,4 @@
+const { setLanguage, T } = require('./i18n.cjs');
 const { app, BrowserWindow, ipcMain, dialog, protocol, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -5,19 +6,18 @@ const os = require('os');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
 const { Readable } = require('stream');
-const { stabilizeFile, chromaKeyFile, cleanVoiceFile, ffmpegPath, probe, computePeaks, monoFiles, buildExportArgs, planChunks, gpuJobs, ALL_EXT, VIDEO_EXT, IMAGE_EXT, AUDIO_EXT, MIME, ext } = require('./media.cjs');
+const { stabilizeFile, chromaKeyFile, cleanVoiceFile, voiceEffectFile, VOICE_EFFECTS, ffmpegPath, probe, computePeaks, monoFiles, buildExportArgs, planChunks, gpuJobs, ALL_EXT, VIDEO_EXT, IMAGE_EXT, AUDIO_EXT, MIME, ext } = require('./media.cjs');
 const { once } = require('events');
 const { sanitize, resolveMediaPath, toFileContent, writeAtomic } = require('./project.cjs');
 const { transcribe, MODELS, LANGUAGES } = require('./transcribe.cjs');
 const { cubeToLut } = require('./cube.cjs');
 const { searchMusic, downloadMusic, generateMusic, musicPage, downloadTo } = require('./music.cjs');
 const ai = require('./ai.cjs');
-const { scanLibrary, isListed } = require('./library.cjs');
 const { createControl } = require('./control.cjs');
 const { findBeats } = require('./beats.cjs');
 const { ensureSounds } = require('./sfx.cjs');
 const { keepBackup, isBackupDue } = require('./backups.cjs');
-const { detectEncoder, intermediateArgs, proxyArgs, withFallback } = require('./encoders.cjs');
+const { detectEncoder, setHardwareEncoding, intermediateArgs, proxyArgs, withFallback } = require('./encoders.cjs');
 const { createProxies } = require('./proxies.cjs');
 
 // Lets a test instance run with its own data folder, so it never touches the user's autosave.
@@ -121,7 +121,7 @@ async function loadProject(raw, baseDir) {
 }
 
 const stripBom = (text) => text.replace(/^﻿/, '');
-const PROJECT_FILTER =[{ name: 'Projet Cupkata', extensions: ['cupkata'] }];
+const PROJECT_FILTER =[{ name: T('Projet Cupkata'), extensions: ['cupkata'] }];
 const autosavePath = () => path.join(app.getPath('userData'), 'autosave.json');
 const backupsDir = () => path.join(app.getPath('userData'), 'backups');
 let lastBackupAt = 0;
@@ -133,8 +133,8 @@ ipcMain.handle('project:save', async (event, data, filePath) => {
   let target = filePath;
   if (!target) {
     const res = await dialog.showSaveDialog(BrowserWindow.fromWebContents(event.sender), {
-      title: 'Enregistrer le projet',
-      defaultPath: path.join(app.getPath('documents'), 'Mon projet.cupkata'),
+      title: T('Enregistrer le projet'),
+      defaultPath: path.join(app.getPath('documents'), T('Mon projet.cupkata')),
       filters: PROJECT_FILTER,
     });
     if (res.canceled) return null;
@@ -149,7 +149,7 @@ ipcMain.handle('project:save', async (event, data, filePath) => {
 
 ipcMain.handle('project:open', async (event) => {
   const res = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), {
-    title: 'Ouvrir un projet',
+    title: T('Ouvrir un projet'),
     properties: ['openFile'],
     filters: PROJECT_FILTER,
   });
@@ -161,7 +161,7 @@ ipcMain.handle('project:open', async (event) => {
 ipcMain.handle('project:open-backup', async (event) => {
   await fs.promises.mkdir(backupsDir(), { recursive: true });
   const res = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), {
-    title: 'Restaurer une sauvegarde',
+    title: T('Restaurer une sauvegarde'),
     defaultPath: backupsDir(),
     properties: ['openFile'],
     filters: PROJECT_FILTER,
@@ -171,6 +171,8 @@ ipcMain.handle('project:open-backup', async (event) => {
 });
 
 // From the main process: a reload asked by the page counts as a navigation, which is blocked.
+ipcMain.handle('app:set-language', (_e, language) => setLanguage(language));
+ipcMain.handle('app:set-hardware-encoding', (_e, allowed) => setHardwareEncoding(allowed));
 ipcMain.handle('app:restart-interface', (event) => event.sender.reload());
 
 ipcMain.handle('app:log-error', (_e, text) =>
@@ -182,7 +184,7 @@ async function readProjectFile(filePath) {
   try {
     raw = JSON.parse(stripBom(await fs.promises.readFile(filePath, 'utf8')));
   } catch {
-    throw new Error("Ce fichier n'est pas un projet Cupkata valide");
+    throw new Error(T("Ce fichier n'est pas un projet Cupkata valide"));
   }
   return { ...(await loadProject(raw, path.dirname(filePath))), filePath };
 }
@@ -197,7 +199,7 @@ ipcMain.handle('project:autosave', async (_e, payload) => {
   const project = payload?.project;
   if ((project?.media?.length || project?.clips?.length) && isBackupDue(lastBackupAt)) {
     lastBackupAt = Date.now();
-    const name = typeof payload.filePath === 'string' ? path.basename(payload.filePath, '.cupkata') : 'Sans titre';
+    const name = typeof payload.filePath === 'string' ? path.basename(payload.filePath, '.cupkata') : T('Sans titre');
     await keepBackup(backupsDir(), name, toFileContent(project, null)).catch(() => {});
   }
 });
@@ -223,10 +225,17 @@ ipcMain.handle('project:dirty', (event, dirty) => {
   else dirtyWindows.delete(id);
 });
 
+// The AI already chose to drop the changes (or there were none): no close prompt, and a short delay
+// so the HTTP answer leaves before the window goes. The autosave stays for the next launch.
+function quitFromControl(contentsId) {
+  dirtyWindows.delete(contentsId);
+  setTimeout(() => app.quit(), 300);
+}
+
 ipcMain.handle('dialog:confirm', async (event, message) => {
   const res = await dialog.showMessageBox(BrowserWindow.fromWebContents(event.sender), {
     type: 'warning',
-    buttons: ['Continuer', 'Annuler'],
+    buttons: [T('Continuer'), T('Annuler')],
     defaultId: 1,
     cancelId: 1,
     message: String(message),
@@ -236,9 +245,9 @@ ipcMain.handle('dialog:confirm', async (event, message) => {
 
 ipcMain.handle('filters:import', async (event) => {
   const res = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), {
-    title: 'Importer un filtre de couleur',
+    title: T('Importer un filtre de couleur'),
     properties: ['openFile', 'multiSelections'],
-    filters: [{ name: 'Filtre LUT 3D', extensions: ['cube'] }],
+    filters: [{ name: T('Filtre LUT 3D'), extensions: ['cube'] }],
   });
   return res.canceled ? [] : readCubes(res.filePaths);
 });
@@ -247,7 +256,7 @@ async function readCubes(files) {
   const out = [];
   for (const file of files.slice(0, 20)) {
     try {
-      if (path.extname(file).toLowerCase() !== '.cube') throw new Error('Ce n’est pas un fichier .cube');
+      if (path.extname(file).toLowerCase() !== '.cube') throw new Error(T('Ce n’est pas un fichier .cube'));
       const lut = cubeToLut(await fs.promises.readFile(file, 'utf8'));
       out.push({ id: `custom:${crypto.randomUUID()}`, name: path.basename(file, path.extname(file)).slice(0, 60), ...lut });
     } catch (err) {
@@ -259,9 +268,9 @@ async function readCubes(files) {
 
 ipcMain.handle('media:relink', async (event) => {
   const res = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), {
-    title: 'Retrouver le fichier',
+    title: T('Retrouver le fichier'),
     properties: ['openFile'],
-    filters: [{ name: 'Médias', extensions: ALL_EXT }],
+    filters: [{ name: T('Médias'), extensions: ALL_EXT }],
   });
   return res.canceled ? null : probeOne(res.filePaths[0]);
 });
@@ -269,13 +278,13 @@ ipcMain.handle('media:relink', async (event) => {
 ipcMain.handle('media:import', async (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   const res = await dialog.showOpenDialog(win, {
-    title: 'Importer des médias',
+    title: T('Importer des médias'),
     properties: ['openFile', 'multiSelections'],
     filters: [
-      { name: 'Médias', extensions: ALL_EXT },
-      { name: 'Vidéos', extensions: VIDEO_EXT },
-      { name: 'Photos', extensions: IMAGE_EXT },
-      { name: 'Audio', extensions: AUDIO_EXT },
+      { name: T('Médias'), extensions: ALL_EXT },
+      { name: T('Vidéos'), extensions: VIDEO_EXT },
+      { name: T('Photos'), extensions: IMAGE_EXT },
+      { name: T('Audio'), extensions: AUDIO_EXT },
     ],
   });
   return res.canceled ? [] : probeAll(res.filePaths);
@@ -303,7 +312,7 @@ ipcMain.handle('media:proxy', async (_e, m) => {
 });
 
 ipcMain.handle('media:peaks', (_e, filePath) => {
-  if (!isAllowed(filePath)) throw new Error('Média introuvable');
+  if (!isAllowed(filePath)) throw new Error(T('Média introuvable'));
   if (!peaksCache.has(filePath)) {
     const job = computePeaks(filePath, thumbDir);
     peaksCache.set(filePath, job);
@@ -331,14 +340,14 @@ function ffmpegTool(args) {
     let err = '';
     p.stderr.on('data', (d) => (err += d));
     p.on('error', reject);
-    p.on('close', (code) => (code === 0 ? resolve() : reject(new Error(err.trim().split('\n').slice(-3).join('\n') || `ffmpeg a échoué (${code})`))));
+    p.on('close', (code) => (code === 0 ? resolve() : reject(new Error(err.trim().split('\n').slice(-3).join('\n') || T('ffmpeg a échoué ({0})', code)))));
   });
 }
 
 // Snapshot of the preview: the picture shown, saved as a PNG and imported like a photo.
 ipcMain.handle('snapshot:save', async (_e, bytes) => {
-  if (!(bytes instanceof Uint8Array) || bytes.length < 8 || bytes.length > 50 * 1024 * 1024) throw new Error('Capture invalide');
-  if (Buffer.from(bytes.subarray(0, 8)).toString('hex') !== '89504e470d0a1a0a') throw new Error('Capture invalide');
+  if (!(bytes instanceof Uint8Array) || bytes.length < 8 || bytes.length > 50 * 1024 * 1024) throw new Error(T('Capture invalide'));
+  if (Buffer.from(bytes.subarray(0, 8)).toString('hex') !== '89504e470d0a1a0a') throw new Error(T('Capture invalide'));
   const out = path.join(await madeDir('Captures'), stampName('Capture', 'png'));
   await fs.promises.writeFile(out, bytes);
   return probeOne(out);
@@ -346,7 +355,7 @@ ipcMain.handle('snapshot:save', async (_e, bytes) => {
 
 // Freeze frame: the source frame at `time`, saved as a PNG and imported like a photo.
 ipcMain.handle('media:freeze', async (_e, filePath, time) => {
-  if (!isAllowed(filePath) || !Number.isFinite(time) || time < 0) throw new Error('Média introuvable');
+  if (!isAllowed(filePath) || !Number.isFinite(time) || time < 0) throw new Error(T('Média introuvable'));
   const out = path.join(await madeDir('Images figées'), stampName('Image figée', 'png'));
   await ffmpegTool(['-ss', String(time), '-i', filePath, '-frames:v', '1', '-update', '1', out]);
   return probeOne(out);
@@ -356,7 +365,7 @@ ipcMain.handle('media:freeze', async (_e, filePath, time) => {
 // keeps every frame in memory, so the part is reversed in short pieces that are then joined last-first.
 const REVERSE_PIECE = 4;
 ipcMain.handle('media:reverse', async (_e, filePath, start, span) => {
-  if (!isAllowed(filePath) || ![start, span].every(Number.isFinite) || start < 0 || span <= 0) throw new Error('Média introuvable');
+  if (!isAllowed(filePath) || ![start, span].every(Number.isFinite) || start < 0 || span <= 0) throw new Error(T('Média introuvable'));
   const info = await probe(filePath, thumbDir);
   const work = path.join(os.tmpdir(), `cupkata-reverse-${crypto.randomUUID()}`);
   await fs.promises.mkdir(work, { recursive: true });
@@ -385,30 +394,38 @@ ipcMain.handle('media:reverse', async (_e, filePath, start, span) => {
 
 // Voice cleaning: the clip plays a copy of its file, so the preview and the export hear the same
 // thing. One copy per source file, reused for all of its clips.
-ipcMain.handle('media:clean-voice', async (_e, filePath) => {
-  if (!isAllowed(filePath)) throw new Error('Média introuvable');
+const audioCopy = async (filePath, folder, label, make) => {
+  if (!isAllowed(filePath)) throw new Error(T('Média introuvable'));
   const info = await probe(filePath, thumbDir);
-  if (!info.hasAudio) throw new Error("Ce média n'a pas de son");
+  if (!info.hasAudio) throw new Error(T("Ce média n'a pas de son"));
   const source = path.parse(filePath);
   const stat = await fs.promises.stat(filePath);
   const key = crypto.createHash('sha1').update(`${filePath}|${stat.size}|${stat.mtimeMs}`).digest('hex').slice(0, 8);
   const isVideo = info.type === 'video';
   const extension = isVideo ? source.ext.slice(1) : 'm4a';
-  const out = path.join(await madeDir('Voix nettoyées'), `${source.name} net ${key}.${extension}`);
+  const out = path.join(await madeDir(folder), `${source.name} ${label} ${key}.${extension}`);
   if (!fs.existsSync(out)) {
     const work = `${out}.tmp.${extension}`;
     try {
-      await cleanVoiceFile(filePath, work, isVideo);
+      await make(work, isVideo, info);
       await fs.promises.rename(work, out);
     } finally {
       fs.promises.rm(work, { force: true }).catch(() => {});
     }
   }
   return probeOne(out);
+};
+
+ipcMain.handle('media:clean-voice', (_e, filePath) =>
+  audioCopy(filePath, 'Voix nettoyées', 'net', (work, isVideo) => cleanVoiceFile(filePath, work, isVideo)));
+
+ipcMain.handle('media:voice-effect', (_e, filePath, effect) => {
+  if (!VOICE_EFFECTS.some((v) => v.id === effect)) throw new Error(T('Effet de voix inconnu'));
+  return audioCopy(filePath, 'Voix modifiées', effect, (work, isVideo, info) => voiceEffectFile(filePath, work, isVideo, effect, info.duration));
 });
 
 ipcMain.handle('media:stabilize', async (_e, filePath) => {
-  if (!isAllowed(filePath)) throw new Error('Média introuvable');
+  if (!isAllowed(filePath)) throw new Error(T('Média introuvable'));
   const source = path.parse(filePath);
   const stat = await fs.promises.stat(filePath);
   const key = crypto.createHash('sha1').update(`${filePath}|${stat.size}|${stat.mtimeMs}`).digest('hex').slice(0, 8);
@@ -427,7 +444,7 @@ ipcMain.handle('media:stabilize', async (_e, filePath) => {
 });
 
 ipcMain.handle('media:chroma', async (_e, r) => {
-  if (!isAllowed(r?.path)) throw new Error('Média introuvable');
+  if (!isAllowed(r?.path)) throw new Error(T('Média introuvable'));
   const isImage = !!r.isImage;
   const color = /^#[0-9a-f]{6}$/i.test(r.color || '') ? r.color : null;
   const out = path.join(await madeDir('Détourages'), stampName(`${path.parse(r.path).name} fond vert`, isImage ? 'png' : 'webm'));
@@ -437,15 +454,15 @@ ipcMain.handle('media:chroma', async (_e, r) => {
 
 // The beats of a piece of music, in seconds of its file.
 ipcMain.handle('media:beats', (_e, filePath, start, duration) => {
-  if (!isAllowed(filePath) || ![start, duration].every(Number.isFinite) || start < 0 || duration <= 0) throw new Error('Média introuvable');
+  if (!isAllowed(filePath) || ![start, duration].every(Number.isFinite) || start < 0 || duration <= 0) throw new Error(T('Média introuvable'));
   return findBeats({ file: filePath, start, span: duration });
 });
 
-// The sound-effect library: written to disk the first time, then imported like any sound.
+// The sound-effect library: copied to disk the first time, then imported like any sound.
 let sfxList = null;
 ipcMain.handle('sfx:list', async () => {
   sfxList ??= (async () => {
-    const sounds = await ensureSounds(await madeDir('Bruitages'));
+    const sounds = await ensureSounds(await madeDir('Effets sonores'));
     const items = [];
     for (const s of sounds) items.push({ id: s.id, name: s.name, group: s.group, item: await probeOne(s.file) });
     return items;
@@ -469,7 +486,7 @@ const readTemplates = async () => {
 ipcMain.handle('templates:list', readTemplates);
 ipcMain.handle('templates:save', async (_e, template) => {
   const name = String(template?.name || '').trim().slice(0, 60);
-  if (!name) throw new Error('Donne un nom à ce modèle');
+  if (!name) throw new Error(T('Donne un nom à ce modèle'));
   const clean = sanitize({ app: 'cupkata', media: template.media || [], clips: template.clips || [], settings: template.settings || {} });
   const entry = { id: crypto.randomUUID(), name, settings: clean.settings, media: clean.media, clips: clean.clips };
   const list = [...(await readTemplates()).filter((t) => t.name !== name), entry];
@@ -482,26 +499,10 @@ ipcMain.handle('templates:delete', async (_e, id) => {
   return list;
 });
 
-// iTunes / Apple Music purchases downloaded on this PC (and any other folder the user picks).
-ipcMain.handle('library:scan', async (event, pick) => {
-  let extra = null;
-  if (pick) {
-    const res = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), {
-      title: 'Choisir un dossier de musique',
-      properties: ['openDirectory'],
-    });
-    if (res.canceled) return null;
-    extra = res.filePaths[0];
-  }
-  return scanLibrary(extra);
-});
-// Imports (probes) tracks found by the last scan; protected .m4p files are refused.
-ipcMain.handle('library:import', (_e, paths) => probeAll((Array.isArray(paths) ? paths : []).filter(isListed).slice(0, 200)));
-
 // Open-source AI tools (electron/ai.cjs): one task at a time, with progress and a stop button.
 let aiJob = null;
 async function runAi(event, work) {
-  if (aiJob) throw new Error('Une tâche IA est déjà en cours');
+  if (aiJob) throw new Error(T('Une tâche IA est déjà en cours'));
   const job = { cancelled: false };
   aiJob = job;
   try {
@@ -522,7 +523,7 @@ const span = (v, max = 3600) => Math.min(max, Math.max(0, Number(v) || 0));
 
 ipcMain.handle('ai:cutout', (event, r) =>
   runAi(event, async (ctx) => {
-    if (!isAllowed(r?.path)) throw new Error('Média introuvable');
+    if (!isAllowed(r?.path)) throw new Error(T('Média introuvable'));
     const isImage = !!r.isImage;
     const out = path.join(await madeDir('Détourages'), stampName(`${path.parse(r.path).name} détouré`, isImage ? 'png' : 'webm'));
     await ai.removeBackground(
@@ -535,21 +536,21 @@ ipcMain.handle('ai:cutout', (event, r) =>
 
 ipcMain.handle('ai:silences', (event, r) =>
   runAi(event, (ctx) => {
-    if (!isAllowed(r?.path)) throw new Error('Média introuvable');
+    if (!isAllowed(r?.path)) throw new Error(T('Média introuvable'));
     return ai.findSpeech({ file: r.path, start: span(r.start), span: Math.max(0.1, span(r.span)), minSilence: Math.min(3, Math.max(0.2, Number(r.minSilence) || 0.5)) }, ctx);
   }),
 );
 
 ipcMain.handle('ai:track', (event, r) =>
   runAi(event, (ctx) => {
-    if (!isAllowed(r?.path) || !(r.width > 0 && r.height > 0)) throw new Error('Média introuvable');
+    if (!isAllowed(r?.path) || !(r.width > 0 && r.height > 0)) throw new Error(T('Média introuvable'));
     return ai.trackSubject({ file: r.path, start: span(r.start), span: Math.max(0.1, span(r.span)), width: r.width, height: r.height }, ctx);
   }),
 );
 
 ipcMain.handle('ai:translate', (event, r) =>
   runAi(event, (ctx) => {
-    if (!ai.TRANSLATE_LANGS.includes(r?.from) || !ai.TRANSLATE_LANGS.includes(r?.to)) throw new Error('Langue non disponible');
+    if (!ai.TRANSLATE_LANGS.includes(r?.from) || !ai.TRANSLATE_LANGS.includes(r?.to)) throw new Error(T('Langue non disponible'));
     const texts = Array.isArray(r.texts) ? r.texts.slice(0, 2000).map((t) => String(t ?? '')) : [];
     return ai.translateTexts({ texts, from: r.from, to: r.to }, ctx);
   }),
@@ -580,7 +581,7 @@ ipcMain.handle('music:page', (_e, id) => {
 
 let musicJob = null;
 ipcMain.handle('music:generate', async (event, request) => {
-  if (musicJob) throw new Error('Une musique est déjà en cours de création');
+  if (musicJob) throw new Error(T('Une musique est déjà en cours de création'));
   const job = { cancelled: false };
   musicJob = job;
   try {
@@ -605,11 +606,11 @@ ipcMain.handle('music:cancel', () => {
 // Documents\Cupkata\Voix off (the test data folder for test instances), then imported like any media.
 const voiceDir = () =>
   process.env.CUPKATA_USER_DATA
-    ? path.join(app.getPath('userData'), 'Voix off')
-    : path.join(app.getPath('documents'), 'Cupkata', 'Voix off');
+    ? path.join(app.getPath('userData'), T('Voix off'))
+    : path.join(app.getPath('documents'), 'Cupkata', T('Voix off'));
 
 ipcMain.handle('voice:save', async (_e, bytes) => {
-  if (!(bytes instanceof Uint8Array) || !bytes.length) throw new Error("L'enregistrement est vide.");
+  if (!(bytes instanceof Uint8Array) || !bytes.length) throw new Error(T("L'enregistrement est vide."));
   const dir = voiceDir();
   await fs.promises.mkdir(dir, { recursive: true });
   const stamp = new Date().toISOString().slice(0, 19).replace('T', ' ').replace(/:/g, '-');
@@ -622,7 +623,7 @@ ipcMain.handle('voice:save', async (_e, bytes) => {
       let err = '';
       p.stderr.on('data', (d) => (err += d));
       p.on('error', reject);
-      p.on('close', (code) => (code === 0 ? resolve() : reject(new Error(err.trim() || `ffmpeg a échoué (${code})`))));
+      p.on('close', (code) => (code === 0 ? resolve() : reject(new Error(err.trim() || T('ffmpeg a échoué ({0})', code)))));
     });
   } finally {
     fs.promises.unlink(raw).catch(() => {});
@@ -633,9 +634,9 @@ ipcMain.handle('voice:save', async (_e, bytes) => {
 ipcMain.handle('export:choose', async (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   const res = await dialog.showSaveDialog(win, {
-    title: 'Exporter la vidéo',
+    title: T('Exporter la vidéo'),
     defaultPath: path.join(app.getPath('videos'), 'cupkata-export.mp4'),
-    filters: [{ name: 'Vidéo MP4', extensions: ['mp4'] }],
+    filters: [{ name: T('Vidéo MP4'), extensions: ['mp4'] }],
   });
   return res.canceled ? null : res.filePath;
 });
@@ -673,12 +674,12 @@ ipcMain.handle('export:prepare', async () => {
 
 ipcMain.handle('export:frame', async (_e, token, seq, frame, data) => {
   const dir = frameJobs.get(token);
-  if (!dir) throw new Error('Export inconnu');
+  if (!dir) throw new Error(T('Export inconnu'));
   if (!Number.isInteger(seq) || seq < 0 || seq > 999 || !Number.isInteger(frame) || frame < 0 || frame > 200000) {
-    throw new Error('Image d\'effet invalide');
+    throw new Error(T("Image d'effet invalide"));
   }
   const bytes = Buffer.from(data instanceof Uint8Array ? data : []);
-  if (bytes.length > MAX_FRAME_BYTES || !bytes.subarray(0, 8).equals(PNG_SIGNATURE)) throw new Error('Image d\'effet invalide');
+  if (bytes.length > MAX_FRAME_BYTES || !bytes.subarray(0, 8).equals(PNG_SIGNATURE)) throw new Error(T("Image d'effet invalide"));
   await fs.promises.writeFile(path.join(dir, `fx${seq}-${String(frame).padStart(5, '0')}.png`), bytes);
 });
 
@@ -711,7 +712,7 @@ function stopGpuJob(job) {
 
 ipcMain.handle('gpu:plan', (_e, project, token) => {
   const dir = frameJobs.get(token);
-  if (!dir) throw new Error('Export inconnu');
+  if (!dir) throw new Error(T('Export inconnu'));
   if (!prerenderedByToken.has(token)) prerenderedByToken.set(token, new Map());
   return gpuJobs(withLuts(project, token), isAllowed).map((j) => {
     const jobId = crypto.randomBytes(8).toString('hex');
@@ -722,7 +723,7 @@ ipcMain.handle('gpu:plan', (_e, project, token) => {
 
 ipcMain.handle('gpu:start', async (_e, jobId) => {
   const job = gpuState.get(jobId);
-  if (!job || job.decoder) throw new Error('Traitement GPU inconnu');
+  if (!job || job.decoder) throw new Error(T('Traitement GPU inconnu'));
   const encoder = await detectEncoder(ffmpegPath);
   Object.assign(job, { chunks: [], buffered: 0, waiters: [], ended: false, errors: '' });
   job.decoder = spawn(
@@ -753,7 +754,7 @@ ipcMain.handle('gpu:start', async (_e, jobId) => {
 
 ipcMain.handle('gpu:read', (_e, jobId) => {
   const job = gpuState.get(jobId);
-  if (!job?.decoder) throw new Error('Traitement GPU inconnu');
+  if (!job?.decoder) throw new Error(T('Traitement GPU inconnu'));
   return new Promise((resolve) => {
     job.waiters.push(resolve);
     serveFrames(job);
@@ -762,19 +763,19 @@ ipcMain.handle('gpu:read', (_e, jobId) => {
 
 ipcMain.handle('gpu:write', async (_e, jobId, data) => {
   const job = gpuState.get(jobId);
-  if (!job?.encoder) throw new Error('Traitement GPU inconnu');
-  if (!(data instanceof Uint8Array) || data.byteLength !== (job.outSize ?? job.frameSize)) throw new Error('Image GPU invalide');
+  if (!job?.encoder) throw new Error(T('Traitement GPU inconnu'));
+  if (!(data instanceof Uint8Array) || data.byteLength !== (job.outSize ?? job.frameSize)) throw new Error(T('Image GPU invalide'));
   if (!job.encoder.stdin.write(Buffer.from(data.buffer, data.byteOffset, data.byteLength))) await once(job.encoder.stdin, 'drain');
 });
 
 ipcMain.handle('gpu:finish', async (_e, jobId) => {
   const job = gpuState.get(jobId);
-  if (!job?.encoder) throw new Error('Traitement GPU inconnu');
+  if (!job?.encoder) throw new Error(T('Traitement GPU inconnu'));
   gpuState.delete(jobId);
   job.decoder.kill();
   job.encoder.stdin.end();
   const [code] = job.encoder.exitCode === null ? await once(job.encoder, 'close') : [job.encoder.exitCode];
-  if (code !== 0) throw new Error('Le rendu GPU a échoué :\n' + job.errors.trim().split('\n').slice(-4).join('\n'));
+  if (code !== 0) throw new Error(T('Le rendu GPU a échoué :') + job.errors.trim().split('\n').slice(-4).join('\n'));
   if (job.kind === 'fx') fxRangesByToken.get(job.token)?.push({ path: job.out, start: job.start, duration: job.frames / job.fps });
   else prerenderedByToken.get(job.token)?.set(job.k, job.out);
 });
@@ -785,7 +786,7 @@ const LUT_ID = /^(custom:)?[\w-]{1,80}$/;
 
 ipcMain.handle('export:luts', async (_e, token, luts) => {
   const dir = frameJobs.get(token);
-  if (!dir) throw new Error('Export inconnu');
+  if (!dir) throw new Error(T('Export inconnu'));
   const files = {};
   const entries = Object.entries(luts && typeof luts === 'object' ? luts : {}).slice(0, 200);
   for (const [i, [id, lut]] of entries.entries()) {
@@ -815,8 +816,8 @@ const fxRangesByToken = new Map();
 
 ipcMain.handle('export:base', async (event, project, token) => {
   const dir = frameJobs.get(token);
-  if (!dir) throw new Error('Export inconnu');
-  if (exportProc) throw new Error('Un export est déjà en cours');
+  if (!dir) throw new Error(T('Export inconnu'));
+  if (exportProc) throw new Error(T('Un export est déjà en cours'));
   const base = path.join(dir, 'base.mkv');
   const { overlays, cleanup } = await resolveOverlays(project?.overlays, token);
   try {
@@ -833,9 +834,9 @@ ipcMain.handle('export:base', async (event, project, token) => {
 ipcMain.handle('fx:plan', (_e, token, items, format) => {
   const dir = frameJobs.get(token);
   const base = baseByToken.get(token);
-  if (!dir || !base) throw new Error('Export inconnu');
+  if (!dir || !base) throw new Error(T('Export inconnu'));
   const { width, height, fps } = format || {};
-  if (![width, height, fps].every((v) => Number.isInteger(v) && v > 0 && v <= 8192)) throw new Error('Format invalide');
+  if (![width, height, fps].every((v) => Number.isInteger(v) && v > 0 && v <= 8192)) throw new Error(T('Format invalide'));
   return (Array.isArray(items) ? items.slice(0, 500) : []).flatMap((it, i) => {
     if (!Number.isFinite(it?.start) || !(it.duration > 0)) return [];
     const first = Math.max(0, Math.round(it.start * fps));
@@ -889,7 +890,7 @@ async function resolveOverlays(list, token) {
 }
 
 ipcMain.handle('export:run', async (event, project, outPath, token) => {
-  if (exportProc) throw new Error('Un export est déjà en cours');
+  if (exportProc) throw new Error(T('Un export est déjà en cours'));
   const { overlays, cleanup } = await resolveOverlays(project?.overlays, token);
   const base = baseByToken.get(token);
   const opts = base ? { baseVideo: base, fxRanges: fxRangesByToken.get(token) || [] } : {};
@@ -925,7 +926,8 @@ async function renderChunks(event, project, token) {
 
 const runFfmpeg = async (event, project, outPath, prerendered, opts = {}) => {
   const base = { ...opts, mono: await monoFiles(project, isAllowed) };
-  return withFallback(await detectEncoder(ffmpegPath), (encoder) => encodeProject(event, project, outPath, prerendered, { ...base, encoder }));
+  const [working, delivery] = [await detectEncoder(ffmpegPath), await detectEncoder(ffmpegPath, project.encode?.codec)];
+  return withFallback(working, (encoder, finalEncoder) => encodeProject(event, project, outPath, prerendered, { ...base, encoder, finalEncoder }), delivery);
 };
 
 const encodeProject = (event, project, outPath, prerendered, opts) => new Promise((resolve, reject) => {
@@ -943,7 +945,7 @@ const encodeProject = (event, project, outPath, prerendered, opts) => new Promis
   args.splice(at, 2, '-filter_complex_script', graphFile);
   if (args.join(' ').length > 32000) {
     fs.rm(graphFile, { force: true }, () => {});
-    return reject(new Error('Ce montage a trop d’incrustations pour être exporté en une fois (limite de Windows). Réduis leur nombre.'));
+    return reject(new Error(T('Ce montage a trop d’incrustations pour être exporté en une fois (limite de Windows). Réduis leur nombre.')));
   }
   const proc = spawn(ffmpegPath, args, { windowsHide: true });
   proc.on('close', () => fs.rm(graphFile, { force: true }, () => {}));
@@ -969,9 +971,9 @@ const encodeProject = (event, project, outPath, prerendered, opts) => new Promis
     if (code === 0) return resolve(outPath);
     if (proc.cancelled) {
       fs.rm(outPath, { force: true }, () => {});
-      return reject(new Error('Export annulé'));
+      return reject(new Error(T('Export annulé')));
     }
-    reject(new Error('FFmpeg a échoué :\n' + tail.trim().split('\n').slice(-6).join('\n')));
+    reject(new Error(T('FFmpeg a échoué :') + tail.trim().split('\n').slice(-6).join('\n')));
   });
 });
 
@@ -985,14 +987,14 @@ ipcMain.handle('export:cancel', () => {
 let subtitlesJob = null;
 
 ipcMain.handle('subtitles:run', async (event, request) => {
-  if (subtitlesJob) throw new Error('Une transcription est déjà en cours');
+  if (subtitlesJob) throw new Error(T('Une transcription est déjà en cours'));
   const { model, language } = request || {};
   const items = Array.isArray(request?.items) ? request.items.slice(0, 500) : [];
-  if (!MODELS.includes(model) || !LANGUAGES.includes(language)) throw new Error('Réglages de transcription invalides');
+  if (!MODELS.includes(model) || !LANGUAGES.includes(language)) throw new Error(T('Réglages de transcription invalides'));
   const valid = items.filter(
     (it) => isAllowed(it?.path) && [it.in, it.duration, it.start].every(Number.isFinite) && it.in >= 0 && it.duration > 0 && it.start >= 0,
   );
-  if (!valid.length) throw new Error('Aucun clip avec du son à transcrire');
+  if (!valid.length) throw new Error(T('Aucun clip avec du son à transcrire'));
   const job = { cancelled: false };
   subtitlesJob = job;
   try {
@@ -1020,7 +1022,7 @@ ipcMain.handle('shell:show', (_e, p) => {
 });
 
 let mainWindow = null;
-const control = createControl({ app, ipcMain, getWindow: () => mainWindow, handlers: { openProject: readProjectFile, importFilters: readCubes } });
+const control = createControl({ app, ipcMain, getWindow: () => mainWindow, handlers: { openProject: readProjectFile, importFilters: readCubes, quit: quitFromControl } });
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -1029,6 +1031,7 @@ function createWindow() {
     minWidth: 1000,
     minHeight: 640,
     title: 'Cupkata',
+    icon: path.join(__dirname, '..', 'dist', 'icon.png'),
     backgroundColor: '#111317',
     autoHideMenuBar: true,
     webPreferences: {
@@ -1054,11 +1057,11 @@ function createWindow() {
     if (!dirtyWindows.has(contentsId)) return;
     const choice = dialog.showMessageBoxSync(win, {
       type: 'warning',
-      buttons: ['Quitter', 'Annuler'],
+      buttons: [T('Quitter'), T('Annuler')],
       defaultId: 1,
       cancelId: 1,
-      message: 'Ton montage a des modifications non enregistrées.',
-      detail: 'Une sauvegarde automatique est gardée : tu pourras la reprendre au prochain lancement.',
+      message: T('Ton montage a des modifications non enregistrées.'),
+      detail: T('Une sauvegarde automatique est gardée : tu pourras la reprendre au prochain lancement.'),
     });
     if (choice === 1) e.preventDefault();
     else dirtyWindows.delete(contentsId);

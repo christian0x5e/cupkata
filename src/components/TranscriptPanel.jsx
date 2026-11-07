@@ -1,5 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { clipSpeed, end, laneOf } from '../project.js';
+import { Scissors } from './icons.jsx';
+import { T } from '../i18n.js';
 
 // Margin kept around a cut word, without eating into its neighbours.
 const CUT_PAD = 0.04;
@@ -60,13 +62,12 @@ export default function TranscriptPanel({ clips, media, time, dispatch, onSeek, 
   if (!words.length) {
     return (
       <div className="captions-card">
-        <strong>Montage par le texte</strong>
+        <strong>{T('Montage par le texte')}</strong>
         <p className="muted">
-          Cupkata écrit ce qui est dit dans tes clips de la piste principale. Supprime ensuite une phrase du texte : le passage est coupé
-          dans la vidéo.
+         {T('Cupkata écrit ce qui est dit dans tes clips de la piste principale. Supprime ensuite une phrase du texte : le passage est coupé dans la vidéo.')}
         </p>
         <button className="btn primary" onClick={onTranscribe}>
-          Transcrire la vidéo
+         {T('Transcrire la vidéo')}
         </button>
       </div>
     );
@@ -75,9 +76,9 @@ export default function TranscriptPanel({ clips, media, time, dispatch, onSeek, 
   return (
     <div className="transcript">
       <div className="fx-target">
-        <span className="muted">Sélectionne des mots, puis Suppr pour les couper. Ctrl+Z annule.</span>
+        <span className="muted">{T('Sélectionne des mots, puis Suppr pour les couper. Ctrl+Z annule.')}</span>
         <button className="btn" onClick={cut} disabled={!range}>
-          ✂ Couper
+          <Scissors /> {T('Couper')}
         </button>
       </div>
       <div
@@ -116,7 +117,7 @@ export default function TranscriptPanel({ clips, media, time, dispatch, onSeek, 
       </div>
       <div className="tr-foot">
         <button className="btn ghost" onClick={onTranscribe}>
-          Transcrire à nouveau
+         {T('Transcrire à nouveau')}
         </button>
       </div>
     </div>

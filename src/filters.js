@@ -1,6 +1,8 @@
-import { buildLut, FILTER_CATEGORIES, LUT_SIZE, PRESETS } from '../shared/filters.mjs';
+import { buildLut, FILTER_CATEGORIES as CATEGORIES, LUT_SIZE, PRESETS as LOOKS } from '../shared/filters.mjs';
+import { T } from './i18n.js';
 
-export { FILTER_CATEGORIES, PRESETS };
+export const FILTER_CATEGORIES = CATEGORIES.map((category) => T(category));
+export const PRESETS = LOOKS.map((look) => ({ ...look, name: T(look.name), cat: T(look.cat) }));
 export const DEFAULT_FILTER_AMOUNT = 0.8;
 
 // An adjustment layer: its settings become a table of its own, which every filter path already knows.

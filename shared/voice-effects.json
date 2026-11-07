@@ -1,0 +1,9 @@
+[
+  { "id": "chipmunk", "name": "Voix aiguë", "filter": "rubberband=pitch=1.5,adelay=24:all=1" },
+  { "id": "deep", "name": "Voix grave", "filter": "rubberband=pitch=0.7,atrim=start=0.009,asetpts=PTS-STARTPTS" },
+  { "id": "robot", "name": "Robot", "filter": "afftfilt=real='hypot(re,im)*sin(0)':imag='hypot(re,im)*cos(0)':win_size=512:overlap=0.75" },
+  { "id": "telephone", "name": "Téléphone", "filter": "highpass=f=300,highpass=f=300,lowpass=f=3400,lowpass=f=3400" },
+  { "id": "megaphone", "name": "Mégaphone", "filter": "highpass=f=500,lowpass=f=2800,asoftclip=type=tanh" },
+  { "id": "echo", "name": "Écho", "filter": "aecho=0.8:0.7:180:0.35" },
+  { "id": "cave", "name": "Grotte", "filter": "aecho=0.8:0.85:120|280|500:0.4|0.3|0.2" }
+]

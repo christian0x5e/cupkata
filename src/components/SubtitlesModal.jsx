@@ -1,23 +1,24 @@
 import { useEffect, useState } from 'react';
+import { T } from '../i18n.js';
 
 const LANGUAGES = [
-  ['french', 'Français'],
-  ['english', 'Anglais'],
-  ['spanish', 'Espagnol'],
-  ['german', 'Allemand'],
-  ['italian', 'Italien'],
-  ['portuguese', 'Portugais'],
-  ['arabic', 'Arabe'],
-  ['auto', 'Détection automatique'],
+  ['french', T('Français')],
+  ['english', T('Anglais')],
+  ['spanish', T('Espagnol')],
+  ['german', T('Allemand')],
+  ['italian', T('Italien')],
+  ['portuguese', T('Portugais')],
+  ['arabic', T('Arabe')],
+  ['auto', T('Détection automatique')],
 ];
 const MODELS = [
-  ['onnx-community/whisper-base', 'Rapide (≈ 80 Mo)'],
-  ['onnx-community/whisper-small', 'Précis (≈ 250 Mo, plus lent)'],
+  ['onnx-community/whisper-base', T('Rapide (≈ 80 Mo)')],
+  ['onnx-community/whisper-small', T('Précis (≈ 250 Mo, plus lent)')],
 ];
 const SOURCES = [
-  ['video', 'Le son des clips vidéo'],
-  ['audio', 'La piste Audio (voix off)'],
-  ['selected', 'Le clip sélectionné seulement'],
+  ['video', T('Le son des clips vidéo')],
+  ['audio', T('La piste Audio (voix off)')],
+  ['selected', T('Le clip sélectionné seulement')],
 ];
 
 export default function SubtitlesModal({ open, wordsOnly = false, canUseSelected, onClose, onRun }) {
@@ -42,27 +43,27 @@ export default function SubtitlesModal({ open, wordsOnly = false, canUseSelected
       onClose();
     } catch (err) {
       const message = String(err?.message || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
-      setStatus(message === 'Transcription annulée' ? null : { error: message });
+      setStatus(message === T('Transcription annulée') ? null : { error: message });
     }
   }
 
   const running = status?.running;
   const label =
     status?.phase === 'model'
-      ? `Préparation du modèle… ${Math.round((status.progress || 0) * 100)} %`
+      ? T('Préparation du modèle… {0} %', Math.round((status.progress || 0) * 100))
       : status?.phase === 'transcribe'
-        ? `Transcription du clip ${Math.min(status.index + 1, status.count)} sur ${status.count}…`
+        ? T('Transcription du clip {0} sur {1}…', Math.min(status.index + 1, status.count), status.count)
         : '';
   const progress = status?.phase === 'model' ? status.progress || 0 : status?.count ? status.index / status.count : 0;
 
   return (
     <div className="modal-backdrop">
       <div className="modal">
-        <h2>{wordsOnly ? 'Transcrire la vidéo' : 'Sous-titres automatiques'}</h2>
+        <h2>{wordsOnly ? T('Transcrire la vidéo') : T('Sous-titres automatiques')}</h2>
         {!running && (
           <div className="form">
             <label className="field">
-              <span>Langue parlée</span>
+              <span>{T('Langue parlée')}</span>
               <select value={language} onChange={(e) => setLanguage(e.target.value)}>
                 {LANGUAGES.map(([v, l]) => (
                   <option key={v} value={v}>
@@ -72,7 +73,7 @@ export default function SubtitlesModal({ open, wordsOnly = false, canUseSelected
               </select>
             </label>
             <label className="field">
-              <span>Précision</span>
+              <span>{T('Précision')}</span>
               <select value={model} onChange={(e) => setModel(e.target.value)}>
                 {MODELS.map(([v, l]) => (
                   <option key={v} value={v}>
@@ -82,7 +83,7 @@ export default function SubtitlesModal({ open, wordsOnly = false, canUseSelected
               </select>
             </label>
             {!wordsOnly && <label className="field">
-              <span>Transcrire</span>
+              <span>{T('Transcrire')}</span>
               <select value={source} onChange={(e) => setSource(e.target.value)}>
                 {SOURCES.filter(([v]) => v !== 'selected' || canUseSelected).map(([v, l]) => (
                   <option key={v} value={v}>
@@ -93,14 +94,13 @@ export default function SubtitlesModal({ open, wordsOnly = false, canUseSelected
             </label>}
             {!wordsOnly && <label className="field">
               <span className="field-row">
-                <span>Mots par sous-titre</span>
+                <span>{T('Mots par sous-titre')}</span>
                 <span className="field-value">{maxWords}</span>
               </span>
               <input type="range" min="2" max="14" step="1" value={maxWords} onChange={(e) => setMaxWords(Number(e.target.value))} />
             </label>}
             <p className="hint">
-              Tout se passe sur ton ordinateur. La première fois, le modèle de reconnaissance (Whisper) est téléchargé une seule
-              fois depuis Hugging Face.{!wordsOnly && ' Les anciens sous-titres automatiques sont remplacés, tes textes ajoutés à la main sont gardés.'}
+             {T('Tout se passe sur ton ordinateur. La première fois, le modèle de reconnaissance (Whisper) est téléchargé une seule fois depuis Hugging Face.')}{!wordsOnly && T('Les anciens sous-titres automatiques sont remplacés, tes textes ajoutés à la main sont gardés.')}
             </p>
             {status?.error && <pre className="error-text">{status.error}</pre>}
           </div>
@@ -116,15 +116,15 @@ export default function SubtitlesModal({ open, wordsOnly = false, canUseSelected
         <div className="modal-actions">
           {running ? (
             <button className="btn" onClick={() => window.cupkata.cancelTranscription()}>
-              Annuler
+             {T('Annuler')}
             </button>
           ) : (
             <>
               <button className="btn" onClick={onClose}>
-                Fermer
+               {T('Fermer')}
               </button>
               <button className="btn primary" onClick={run}>
-                {wordsOnly ? 'Transcrire' : 'Générer'}
+                {wordsOnly ? T('Transcrire') : T('Générer')}
               </button>
             </>
           )}

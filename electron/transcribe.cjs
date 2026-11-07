@@ -1,3 +1,4 @@
+const { T } = require('./i18n.cjs');
 const { execFile } = require('child_process');
 const { ffmpegPath } = require('./media.cjs');
 
@@ -69,7 +70,7 @@ function rms(samples) {
 // items: [{ path, in, duration, start }] — returns segments in timeline seconds.
 async function transcribe({ items, model, language }, { cacheDir, onProgress, isCancelled }) {
   const cancelled = () => {
-    if (isCancelled()) throw new Error('Transcription annulée');
+    if (isCancelled()) throw new Error(T('Transcription annulée'));
   };
   onProgress({ phase: 'model', progress: 0 });
   const asr = await getPipeline(model, cacheDir, onProgress);

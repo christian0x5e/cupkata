@@ -34,7 +34,7 @@ Pour un client MCP, déclare le pont fourni. Chaque commande devient un outil du
 Passe directement le contenu de `args` comme arguments de l'outil, sans l'envelopper : `set_settings` reçoit `{"ratio":"9:16"}`.
 
 ```json
-{ "mcpServers": { "cupkata": { "command": "node", "args": ["C:\\Users\\chris\\cupkata\\ai\\cupkata-mcp.cjs"] } } }
+{ "mcpServers": { "cupkata": { "command": "node", "args": ["C:\\chemin\\vers\\cupkata\\ai\\cupkata-mcp.cjs"] } } }
 ```
 
 Avec la version installée, le script se trouve dans `resources\app.asar.unpacked\ai\cupkata-mcp.cjs`.
@@ -106,7 +106,9 @@ Pour animer un clip, pose des images clés avec `clip_keyframe`, en temps de la 
 - **Rythme** : `clip_beats` sur un clip qui a du son. `fit` termine chaque clip de la piste principale sur un temps fort, `split` coupe, `markers` marque.
 - **Recadrage** : `clip_reframe` suit la personne à l'écran sur un clip vidéo de la piste principale. Change d'abord le format avec `set_settings`.
 - **Image** : `clip_stabilize` corrige les tremblements, `clip_green_screen` retire un fond uni, `clip_speed_ramp` crée une rampe de vitesse, `adjustment_add` ajoute un calque de réglage.
-- **Son** : `clip_clean_voice` fait jouer au clip une copie nettoyée de son fichier. Un second appel remet l'original.
+- **Son** : `clip_clean_voice` fait jouer au clip une copie nettoyée de son fichier. Un second appel remet l'original. `clip_voice_effect` fait de même avec un effet (`chipmunk`, `deep`, `robot`, `telephone`, `megaphone`, `echo`, `cave`) ; `none` remet l'original. Les deux ne se cumulent pas.
+- **Courbes** : `clip_keyframe` accepte `ease` (`linear`, `in`, `out`, `inOut`, `hold`), la courbe jusqu'à l'image clé suivante. Pas pour `volume`.
+- **Format vidéo** : `export_start` accepte `codec` (`h264` par défaut, `hevc`, `av1`).
 - **Sous-titres mot par mot** : `captions_word_by_word`, après ou avant `subtitles_generate`.
 - **Formes et émojis** : `sticker_add`. Le clip créé se règle ensuite comme un texte avec `clip_update`.
 - **Export** : `export_start` accepte `preset` (voir `export_presets` dans `list_catalog`, le format du projet change alors) et `from`, `to` pour un extrait.
@@ -114,7 +116,7 @@ Pour animer un clip, pose des images clés avec `clip_keyframe`, en temps de la 
 ## Méthode conseillée
 
 1. Lis `get_state`. Si `recovery_pending` vaut `true`, demande à l'utilisateur s'il veut reprendre son montage, puis réponds avec `recovery_choose`. Tout le reste est refusé d'ici là.
-2. Si le projet contient déjà du travail, ne l'écrase pas. `project_new` et `project_open` refusent de perdre des modifications non enregistrées. N'utilise `discard_changes` que si l'utilisateur te l'a demandé.
+2. Si le projet contient déjà du travail, ne l'écrase pas. `project_new` et `project_open` refusent de perdre des modifications non enregistrées. N'utilise `discard_changes` que si l'utilisateur te l'a demandé. Il en va de même pour `app_quit`, qui ferme Cupkata sans boîte de dialogue : la connexion se coupe juste après sa réponse.
 3. Appelle `list_catalog` une fois, puis importe les fichiers avec `media_import` et garde les `id` renvoyés.
 4. Construis le montage et réutilise les `id` renvoyés par chaque commande.
 5. **Vérifie en regardant** : récupère des images avec `GET /v1/frame` aux moments importants. Si `X-Cupkata-Settled` vaut `false`, l'image n'était pas prête : redemande-la.
@@ -168,7 +170,7 @@ Quand l'utilisateur demande un short, décide toi-même du contenu à partir de 
 
 - **Exécution** : les commandes passent une à la fois, dans l'ordre d'arrivée. Attends chaque réponse avant d'envoyer la suivante.
 - **Commandes longues** : `clip_cutout`, `clip_cut_silences`, `text_speak`, `texts_translate`, `subtitles_generate` et `music_generate` ne répondent qu'à la fin, parfois après plusieurs minutes, car un modèle peut être téléchargé la première fois. Prévois un long délai d'attente. `get_state` et `wait_idle` restent disponibles pendant ce temps.
-- **Longues aussi** : `transcript_generate`, `clip_beats`, `clip_reframe`, `clip_clean_voice`, `clip_stabilize`, `clip_green_screen` et `short_format`.
+- **Longues aussi** : `transcript_generate`, `clip_beats`, `clip_reframe`, `clip_clean_voice`, `clip_voice_effect`, `clip_stabilize`, `clip_green_screen` et `short_format`.
 - **Annulation** : `undo` et `redo` couvrent les clips, les marqueurs et les filtres importés, pas les réglages du projet ni les imports de médias. `media_remove` n'est pas annulable.
 - **Fidélité** : l'aperçu et l'export utilisent les mêmes calculs. Une image de `/v1/frame` représente donc le rendu final, en 720p sur le petit côté.
 - **Fenêtre** : ne la laisse pas réduite pendant une capture d'image, car l'aperçu peut alors cesser de se dessiner.

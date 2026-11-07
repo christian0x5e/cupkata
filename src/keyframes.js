@@ -1,9 +1,26 @@
-// Keyframes: values that change along a clip, with straight lines between them. Their times are in
+// Keyframes: values that change along a clip, along a chosen curve between them. Their times are in
 // seconds of the clip's source, so they stay on the same picture when the clip is split, trimmed or
 // sped up. The export draws animated clips with drawMoved too, so it matches the preview exactly.
+import { T } from './i18n.js';
 export const TRANSFORM_PROPS = ['scale', 'x', 'y', 'rotation', 'opacity'];
 export const KEYFRAME_RANGES = { scale: [0.02, 4], x: [-1, 2], y: [-1, 2], rotation: [-360, 360], opacity: [0, 1], volume: [0, 2] };
 export const MAX_KEYFRAMES = 100;
+
+// How a value leaves a keyframe towards the next one. The volume stays on straight lines: the export
+// computes it with an FFmpeg expression (electron/media.cjs).
+export const KEYFRAME_EASES = [
+  { id: 'linear', name: T('Constante') },
+  { id: 'in', name: T('Accélère') },
+  { id: 'out', name: T('Ralentit') },
+  { id: 'inOut', name: T('Douce') },
+  { id: 'hold', name: T('Palier') },
+];
+const CURVES = {
+  in: (p) => p * p,
+  out: (p) => 1 - (1 - p) * (1 - p),
+  inOut: (p) => p * p * (3 - 2 * p),
+  hold: (p) => (p < 1 ? 0 : 1),
+};
 
 const sourceAt = (c, tau) => (c.in ?? 0) + tau * (c.speed ?? 1);
 const clamp = (prop, v) => Math.min(KEYFRAME_RANGES[prop][1], Math.max(KEYFRAME_RANGES[prop][0], v));
@@ -20,7 +37,11 @@ export function valueAt(c, prop, tau, fallback) {
   if (t <= list[0].t) return list[0].v;
   for (let i = 1; i < list.length; i++) {
     const [a, b] = [list[i - 1], list[i]];
-    if (t <= b.t) return a.v + ((b.v - a.v) * (t - a.t)) / (b.t - a.t);
+    if (t <= b.t) {
+      const p = (t - a.t) / (b.t - a.t);
+      const curve = prop === 'volume' ? null : CURVES[a.ease];
+      return a.v + (b.v - a.v) * (curve ? curve(p) : p);
+    }
   }
   return list[list.length - 1].v;
 }
@@ -33,7 +54,19 @@ export const keyframeAt = (c, prop, tau) => keyframesOf(c, prop).find((k) => Mat
 export function setKeyframe(c, prop, tau, value) {
   const t = sourceAt(c, tau);
   const kept = keyframesOf(c, prop).filter((k) => Math.abs(k.t - t) >= closeTo(c));
-  const list = [...kept, { t, v: clamp(prop, value) }].sort((a, b) => a.t - b.t);
+  const ease = keyframeAt(c, prop, tau)?.ease;
+  const list = [...kept, { t, v: clamp(prop, value), ...(ease ? { ease } : {}) }].sort((a, b) => a.t - b.t);
+  return { keyframes: { ...c.keyframes, [prop]: list } };
+}
+
+// The curve from the keyframe at tau to the next one.
+export function setKeyframeEase(c, prop, tau, ease) {
+  const at = keyframeAt(c, prop, tau);
+  const list = keyframesOf(c, prop).map((k) => {
+    if (k !== at) return k;
+    const { ease: _old, ...rest } = k;
+    return ease === 'linear' ? rest : { ...rest, ease };
+  });
   return { keyframes: { ...c.keyframes, [prop]: list } };
 }
 

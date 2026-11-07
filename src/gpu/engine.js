@@ -1,4 +1,5 @@
 import { HEADER, SHADERS } from './shaders.js';
+import { T } from '../i18n.js';
 
 const VERTEX = `#version 300 es
 in vec2 aPos;
@@ -36,7 +37,7 @@ class GpuEngine {
     this.canvas.width = width;
     this.canvas.height = height;
     const gl = this.canvas.getContext('webgl2', { premultipliedAlpha: false, preserveDrawingBuffer: true, antialias: false });
-    if (!gl) throw new Error('WebGL2 indisponible : les effets GPU ne peuvent pas fonctionner sur cet ordinateur.');
+    if (!gl) throw new Error(T('WebGL2 indisponible : les effets GPU ne peuvent pas fonctionner sur cet ordinateur.'));
     this.gl = gl;
     this.programs = new Map();
     this.texture = gl.createTexture();
@@ -59,7 +60,7 @@ class GpuEngine {
       const s = gl.createShader(type);
       gl.shaderSource(s, source);
       gl.compileShader(s);
-      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(`Effet ${effect} : ${gl.getShaderInfoLog(s)}`);
+      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(T('Effet {0} : {1}', effect, gl.getShaderInfoLog(s)));
       return s;
     };
     const p = gl.createProgram();
@@ -67,7 +68,7 @@ class GpuEngine {
     gl.attachShader(p, compile(gl.FRAGMENT_SHADER, effect === '__lut' ? LUT_FRAGMENT : HEADER + SHADERS[effect]));
     gl.bindAttribLocation(p, 0, 'aPos');
     gl.linkProgram(p);
-    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(`Effet ${effect} : ${gl.getProgramInfoLog(p)}`);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(T('Effet {0} : {1}', effect, gl.getProgramInfoLog(p)));
     const u = (name) => gl.getUniformLocation(p, name);
     const entry = {
       p, uTex: u('uTex'), uRes: u('uRes'), uTime: u('uTime'), uAmount: u('uAmount'), uFlip: u('uFlip'),

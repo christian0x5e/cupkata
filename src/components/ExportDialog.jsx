@@ -1,17 +1,21 @@
 import { useEffect, useState } from 'react';
-import { EXPORT_PRESETS, estimateBytes, formatBytes } from '../exportPresets.js';
+import { EXPORT_CODECS, EXPORT_PRESETS, estimateBytes, formatBytes } from '../exportPresets.js';
 import { formatShort, FPS } from '../format.js';
 import { frameSize } from '../ratio.js';
+import { T } from '../i18n.js';
+import { getSetting } from '../settings.js';
 
 // What to export before choosing where: preset, part of the timeline, and the size to expect.
 export default function ExportDialog({ open, total, zone, time, ratio, resolution, shortSide, onRatio, onResolution, onClose, onExport }) {
   const [presetId, setPresetId] = useState('custom');
+  const [codec, setCodec] = useState('h264');
   const [part, setPart] = useState('all');
   const [from, setFrom] = useState(0);
   const [to, setTo] = useState(0);
 
   useEffect(() => {
     if (!open) return;
+    setCodec(getSetting('exportCodec'));
     setPart(zone ? 'zone' : 'all');
     setFrom(Math.round(Math.min(time, Math.max(0, total - 1)) * 10) / 10);
     setTo(Math.round(Math.min(total, time + 10) * 10) / 10);
@@ -35,10 +39,10 @@ export default function ExportDialog({ open, total, zone, time, ratio, resolutio
   return (
     <div className="modal-backdrop">
       <div className="modal">
-        <h2>Exporter</h2>
+        <h2>{T('Exporter')}</h2>
         <div className="form">
           <label className="field">
-            <span>Préréglage</span>
+            <span>{T('Préréglage')}</span>
             <select value={presetId} onChange={(e) => choosePreset(e.target.value)}>
               {EXPORT_PRESETS.map((p) => (
                 <option key={p.id} value={p.id}>
@@ -48,44 +52,50 @@ export default function ExportDialog({ open, total, zone, time, ratio, resolutio
               ))}
             </select>
           </label>
-          {preset.ratio && <p className="hint">Le format du projet passe en {preset.ratio} : vérifie le cadrage dans l’aperçu derrière.</p>}
           <label className="field">
-            <span>Partie à exporter</span>
+            <span>{T('Format vidéo')}</span>
+            <select value={codec} onChange={(e) => setCodec(e.target.value)}>
+              {EXPORT_CODECS.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </label>
+          {preset.ratio && <p className="hint">{T('Le format du projet passe en')} {preset.ratio} {T(': vérifie le cadrage dans l’aperçu derrière.')}</p>}
+          <label className="field">
+            <span>{T('Partie à exporter')}</span>
             <select value={part} onChange={(e) => setPart(e.target.value)}>
-              <option value="all">Toute la vidéo ({formatShort(total)})</option>
-              {zone && <option value="zone">La zone de lecture ({formatShort(zone[0])} à {formatShort(zone[1])})</option>}
-              <option value="custom">Un extrait…</option>
+              <option value="all">{T('Toute la vidéo (')}{formatShort(total)})</option>
+              {zone && <option value="zone">{T('La zone de lecture (')}{formatShort(zone[0])} à {formatShort(zone[1])})</option>}
+              <option value="custom">{T('Un extrait…')}</option>
             </select>
           </label>
           {part === 'custom' && (
             <div className="export-range">
               <label className="field">
-                <span>De (secondes)</span>
+                <span>{T('De (secondes)')}</span>
                 <input type="number" min="0" max={total} step="0.1" value={from} onChange={(e) => setFrom(Number(e.target.value))} />
               </label>
               <label className="field">
-                <span>À (secondes)</span>
+                <span>{T('À (secondes)')}</span>
                 <input type="number" min="0" max={total} step="0.1" value={to} onChange={(e) => setTo(Number(e.target.value))} />
               </label>
             </div>
           )}
           <div className="export-summary">
             <span>{width} × {height}, {FPS} i/s</span>
-            <strong title="Estimation : le poids réel dépend du contenu de la vidéo">
-              {valid ? `≈ ${formatBytes(estimateBytes(preset, width, height, FPS, seconds))}` : 'Extrait invalide'}
+            <strong title={T('Estimation : le poids réel dépend du contenu de la vidéo')}>
+              {valid ? `≈ ${formatBytes(estimateBytes(preset, width, height, FPS, seconds, codec))}` : T('Extrait invalide')}
             </strong>
           </div>
         </div>
         <div className="modal-actions">
           <button className="btn" onClick={onClose}>
-            Fermer
+           {T('Fermer')}
           </button>
           <button
             className="btn primary"
             disabled={!valid}
-            onClick={() => onExport({ encode: preset.video ? { video: preset.video, audio: preset.audio } : null, range })}
+            onClick={() => onExport({ encode: preset.video || codec !== 'h264' ? { video: preset.video, audio: preset.audio, codec } : null, range })}
           >
-            Choisir où enregistrer…
+           {T('Choisir où enregistrer…')}
           </button>
         </div>
       </div>

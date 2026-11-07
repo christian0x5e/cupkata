@@ -1,4 +1,5 @@
 const path = require('path');
+const { T } = require('./i18n.cjs');
 const fs = require('fs');
 
 const TYPES = ['video', 'image', 'audio'];
@@ -6,6 +7,9 @@ const TRACKS = ['video', 'audio', 'text', 'fx', 'filter'];
 const TRANSITION_IDS = [
   'fade', 'fadeblack', 'fadewhite', 'wipeleft', 'wiperight', 'wipeup', 'wipedown',
   'slideleft', 'slideright', 'slideup', 'slidedown', 'circleopen', 'zoomin', 'hblur',
+  'smoothleft', 'smoothright', 'smoothup', 'smoothdown', 'circleclose', 'radial', 'vertopen', 'vertclose', 'horzopen', 'horzclose',
+  'diagtl', 'diagtr', 'diagbl', 'diagbr', 'rectcrop', 'pixelize', 'squeezeh',
+  'coverleft', 'coverright', 'coverup', 'coverdown', 'revealleft', 'revealright', 'revealup', 'revealdown',
 ];
 const EFFECT_IDS = require('../shared/effects.json').ids;
 // Kept in sync with shared/filters.mjs (ESM, not loadable here synchronously).
@@ -95,16 +99,18 @@ function sanitizeAnim(anim) {
 
 // Same names and limits as src/keyframes.js.
 const KEYFRAME_RANGES = { scale: [0.02, 4], x: [-1, 2], y: [-1, 2], rotation: [-360, 360], opacity: [0, 1], volume: [0, 2] };
+const KEYFRAME_EASES = ['in', 'out', 'inOut', 'hold'];
 function sanitizeKeyframes(raw) {
   if (!raw || typeof raw !== 'object') return null;
   const out = {};
   for (const [prop, [lo, hi]] of Object.entries(KEYFRAME_RANGES)) {
     const list = Array.isArray(raw[prop]) ? raw[prop].filter((k) => Number.isFinite(k?.t) && Number.isFinite(k?.v)) : [];
-    if (list.length) out[prop] = list.slice(0, 100).map((k) => ({ t: k.t, v: clampTo(k.v, lo, hi) })).sort((a, b) => a.t - b.t);
+    if (list.length) out[prop] = list.slice(0, 100).map((k) => ({ t: k.t, v: clampTo(k.v, lo, hi), ...(prop !== 'volume' && KEYFRAME_EASES.includes(k.ease) ? { ease: k.ease } : {}) })).sort((a, b) => a.t - b.t);
   }
   return Object.keys(out).length ? out : null;
 }
 
+const VOICE_EFFECT_IDS = require('../shared/voice-effects.json').map((e) => e.id);
 const STICKER_IDS = ['arrow', 'ring', 'frame', 'band', 'line', 'star', 'heart', 'progress'];
 const MAX_WORDS = 200000;
 
@@ -153,7 +159,7 @@ function sanitizeMarkers(raw) {
 
 function sanitize(raw) {
   if (!raw || raw.app !== 'cupkata' || !Array.isArray(raw.media) || !Array.isArray(raw.clips)) {
-    throw new Error("Ce fichier n'est pas un projet Cupkata valide");
+    throw new Error(T("Ce fichier n'est pas un projet Cupkata valide"));
   }
   const media = raw.media
     .filter((m) => m && typeof m.id === 'string' && typeof m.path === 'string' && TYPES.includes(m.type))
@@ -260,6 +266,11 @@ function sanitize(raw) {
         // The same for a clip that plays a copy with its voice cleaned.
         cleaned:
           c.cleaned && ids.has(c.cleaned.mediaId) ? { mediaId: c.cleaned.mediaId, in: Math.max(0, finite(c.cleaned.in)) } : null,
+        // The same for a clip that plays a copy with a voice effect.
+        voiced:
+          c.voiced && ids.has(c.voiced.mediaId) && VOICE_EFFECT_IDS.includes(c.voiced.effect)
+            ? { mediaId: c.voiced.mediaId, in: Math.max(0, finite(c.voiced.in)), effect: c.voiced.effect }
+            : null,
         reframe: c.track === 'video' ? sanitizeReframe(c.reframe) : null,
         background:
           c.track === 'video' && ['blur', 'fill', 'color'].includes(c.background?.mode)

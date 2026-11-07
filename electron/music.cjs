@@ -2,6 +2,7 @@
 // (ccMixter, and Openverse when it answers), and generate short pieces locally with an AI model
 // (MusicGen through Transformers.js). Every track keeps its licence and the credit to give its author.
 
+const { T } = require('./i18n.cjs');
 const https = require('https');
 
 const USER_AGENT = 'Cupkata/0.1 (personal video editor)';
@@ -23,7 +24,7 @@ function httpGet(url, { headers = {}, timeout, maxBytes = 5 * 1024 * 1024 }, red
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && redirects > 0) {
         res.resume();
         const next = new URL(res.headers.location, url).toString();
-        if (!next.startsWith('https://')) return finish(reject, new Error('Redirection refusée'));
+        if (!next.startsWith('https://')) return finish(reject, new Error(T('Redirection refusée')));
         return httpGet(next, { headers, timeout, maxBytes }, redirects - 1).then((v) => finish(resolve, v), (e) => finish(reject, e));
       }
       const chunks = [];
@@ -32,7 +33,7 @@ function httpGet(url, { headers = {}, timeout, maxBytes = 5 * 1024 * 1024 }, red
         size += c.length;
         if (size > maxBytes) {
           req.destroy();
-          finish(reject, new Error('Fichier trop gros'));
+          finish(reject, new Error(T('Fichier trop gros')));
         } else chunks.push(c);
       });
       res.on('end', () => finish(resolve, { status: res.statusCode, body: Buffer.concat(chunks) }));
@@ -41,7 +42,7 @@ function httpGet(url, { headers = {}, timeout, maxBytes = 5 * 1024 * 1024 }, red
     req.on('error', (e) => finish(reject, e));
     const timer = setTimeout(() => {
       req.destroy();
-      finish(reject, new Error('Délai dépassé'));
+      finish(reject, new Error(T('Délai dépassé')));
     }, timeout);
   });
 }
@@ -60,8 +61,8 @@ async function getJson(url, ms) {
 // "CC BY 3.0", "CC BY-NC 4.0", "CC0"… from a licence URL.
 function licenceFromUrl(url = '') {
   const m = /creativecommons\.org\/(licenses|publicdomain)\/([\w+-]+)\/?([\d.]+)?/i.exec(url);
-  if (!m) return 'Licence libre';
-  if (m[1] === 'publicdomain' || m[2] === 'publicdomain') return m[2] === 'zero' ? 'CC0' : 'Domaine public';
+  if (!m) return T('Licence libre');
+  if (m[1] === 'publicdomain' || m[2] === 'publicdomain') return m[2] === 'zero' ? 'CC0' : T('Domaine public');
   return `CC ${m[2].toUpperCase()}${m[3] ? ` ${m[3]}` : ''}`;
 }
 const commercialOk = (licence) => !/NC/.test(licence);
@@ -111,7 +112,7 @@ async function searchArchive(query, tag, page, commercial) {
       tracks.push({
         id: `ia:${d.identifier}/${f.name}`,
         title: f.title || f.name.replace(/\.mp3$/i, '').replace(/_/g, ' '),
-        artist: f.creator || f.artist || (Array.isArray(d.creator) ? d.creator[0] : d.creator) || 'Artiste inconnu',
+        artist: f.creator || f.artist || (Array.isArray(d.creator) ? d.creator[0] : d.creator) || T('Artiste inconnu'),
         album: d.title,
         duration: lengthSeconds(f.length),
         licence,
@@ -143,8 +144,8 @@ async function searchCcMixter(query, tag, page) {
       const licence = licenceFromUrl(a.license_url);
       return {
         id: `ccm:${a.upload_id}`,
-        title: a.upload_name || 'Sans titre',
-        artist: a.user_real_name || a.user_name || 'Artiste inconnu',
+        title: a.upload_name || T('Sans titre'),
+        artist: a.user_real_name || a.user_name || T('Artiste inconnu'),
         duration: seconds(file.file_format_info?.ps),
         licence,
         licenceUrl: a.license_url || '',
@@ -164,11 +165,11 @@ async function searchOpenverse(query, tag, page) {
   return (data.results || [])
     .filter((a) => a.url)
     .map((a) => {
-      const licence = a.license === 'cc0' ? 'CC0' : a.license === 'pdm' ? 'Domaine public' : `CC ${String(a.license).toUpperCase()}${a.license_version ? ` ${a.license_version}` : ''}`;
+      const licence = a.license === 'cc0' ? 'CC0' : a.license === 'pdm' ? T('Domaine public') : `CC ${String(a.license).toUpperCase()}${a.license_version ? ` ${a.license_version}` : ''}`;
       return {
         id: `ov:${a.id}`,
-        title: a.title || 'Sans titre',
-        artist: a.creator || 'Artiste inconnu',
+        title: a.title || T('Sans titre'),
+        artist: a.creator || T('Artiste inconnu'),
         duration: (a.duration || 0) / 1000,
         licence,
         licenceUrl: a.license_url || '',
@@ -198,19 +199,19 @@ async function searchMusic({ query = '', tag = '', page = 0, commercial = false 
     .map((r) => ({ ...r, commercial: commercialOk(r.licence), credit: needsCredit(r.licence) }))
     .filter((r) => !commercial || r.commercial);
   for (const r of shown) known.set(r.id, r);
-  if (!shown.length && failed.length === SOURCES.length) throw new Error('Les bibliothèques de musique ne répondent pas : vérifie ta connexion Internet et réessaie.');
+  if (!shown.length && failed.length === SOURCES.length) throw new Error(T('Les bibliothèques de musique ne répondent pas : vérifie ta connexion Internet et réessaie.'));
   return { results: shown, failed };
 }
 
 // What to write in the video description when the licence asks to credit the author.
-const creditText = (r) => `« ${r.title} » par ${r.artist} (${r.source.split(' · ').pop()}) — ${r.licence}${r.licenceUrl ? ` ${r.licenceUrl}` : ''}${r.page ? ` — ${r.page}` : ''}`;
+const creditText = (r) => `${T('« {0} » par {1}', r.title, r.artist)} (${r.source.split(' · ').pop()}) — ${r.licence}${r.licenceUrl ? ` ${r.licenceUrl}` : ''}${r.page ? ` — ${r.page}` : ''}`;
 
 async function downloadMusic(id, dir, fs, path) {
   const r = known.get(id);
-  if (!r) throw new Error('Morceau inconnu : refais la recherche.');
-  if (!r.downloadable) throw new Error(`${r.source} ne permet pas le téléchargement par une application : ouvre sa page pour le télécharger.`);
+  if (!r) throw new Error(T('Morceau inconnu : refais la recherche.'));
+  if (!r.downloadable) throw new Error(T('{0} ne permet pas le téléchargement par une application : ouvre sa page pour le télécharger.', r.source));
   const res = await httpGet(r.audio, { timeout: 180000, maxBytes: MAX_BYTES });
-  if (res.status !== 200) throw new Error(`Téléchargement impossible (HTTP ${res.status})`);
+  if (res.status !== 200) throw new Error(T('Téléchargement impossible (HTTP {0})', res.status));
   const bytes = res.body;
   const clean = (s) => s.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60) || 'musique';
   const ext = ['mp3', 'ogg', 'wav', 'flac', 'm4a', 'opus'].includes(r.ext) ? r.ext : 'mp3';
@@ -222,7 +223,7 @@ async function downloadMusic(id, dir, fs, path) {
   const credit = creditText(r);
   await fs.promises.writeFile(
     path.join(dir, `${base} - licence.txt`),
-    `${credit}\n\n${r.credit ? 'Cette licence demande de citer l’auteur : copie la ligne ci-dessus dans la description de ta vidéo.' : 'Aucune obligation de citer l’auteur (mais c’est sympa de le faire).'}\n${r.commercial ? '' : 'Usage commercial NON autorisé par cette licence.\n'}`,
+    `${credit}\n\n${r.credit ? T('Cette licence demande de citer l’auteur : copie la ligne ci-dessus dans la description de ta vidéo.') : T('Aucune obligation de citer l’auteur (mais c’est sympa de le faire).')}\n${r.commercial ? '' : T('Usage commercial NON autorisé par cette licence.')}`,
   );
   return { file, credit, needsCredit: r.credit };
 }
@@ -289,7 +290,7 @@ function wavBytes(samples, rate) {
 
 async function generateMusic({ prompt, duration }, { cacheDir, onProgress, isCancelled }) {
   const text = String(prompt || '').trim().slice(0, 300);
-  if (!text) throw new Error('Décris la musique que tu veux.');
+  if (!text) throw new Error(T('Décris la musique que tu veux.'));
   const secs = Math.min(30, Math.max(5, Math.round(duration) || 10));
   onProgress({ phase: 'model', progress: 0 });
   const { tokenizer, model } = await loadMusicgen(cacheDir, onProgress);
@@ -298,7 +299,7 @@ async function generateMusic({ prompt, duration }, { cacheDir, onProgress, isCan
   // Called once per generated step: drives the progress bar and lets the user stop.
   const streamer = {
     put() {
-      if (isCancelled()) throw new Error('Génération annulée');
+      if (isCancelled()) throw new Error(T('Génération annulée'));
       made += 1;
       if (made % 10 === 0) onProgress({ phase: 'generate', progress: Math.min(1, made / max) });
     },
@@ -315,7 +316,7 @@ const musicPage = (id) => known.get(id)?.page || null;
 // Saves a file from the web (used to fetch some AI models).
 async function downloadTo(url, file) {
   const r = await httpGet(url, { timeout: 300000, maxBytes: MAX_BYTES });
-  if (r.status !== 200) throw new Error(`Téléchargement impossible (HTTP ${r.status})`);
+  if (r.status !== 200) throw new Error(T('Téléchargement impossible (HTTP {0})', r.status));
   await require('fs').promises.writeFile(file, r.body);
 }
 

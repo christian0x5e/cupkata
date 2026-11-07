@@ -3,10 +3,11 @@ import { BUBBLES, TEXT_EFFECTS, TEXT_PRESETS } from '../text.js';
 import { EMOJIS, SHAPES } from '../stickers.js';
 import SideMenu from './SideMenu.jsx';
 import { SampleTile } from './TextInspector.jsx';
+import { T } from '../i18n.js';
 
 // "Texte" tab: a click adds a text at the playhead, already dressed in the chosen style, bubble or effect.
 const GROUPS = {
-  basic: [{ id: 'default', name: 'Texte par défaut', style: {} }, ...TEXT_PRESETS],
+  basic: [{ id: 'default', name: T('Texte par défaut'), style: {} }, ...TEXT_PRESETS],
   bubble: BUBBLES.filter(([id]) => id !== 'none').map(([id, name]) => ({ id, name, style: { bubble: id, color: '#111111', outline: false } })),
   effects: TEXT_EFFECTS.filter(([id]) => id !== 'none').map(([id, name]) => ({ id, name, style: { effect: id, outline: id !== 'neon' } })),
   shapes: SHAPES.map(({ id, name }) => ({
@@ -22,31 +23,31 @@ export default function TextPanel({ time, total = 0, dispatch, onNotice }) {
     // A progress bar spans the whole video from the start.
     const whole = item.sticker === 'progress' && total > 0;
     dispatch({ type: 'ADD_TEXT', start: whole ? 0 : time, style: item.style, text: item.text, sticker: item.sticker, ...(whole ? { duration: total } : {}) });
-    onNotice({ kind: 'ok', text: item.text ? `« ${item.name} » ajouté : déplace-le et redimensionne-le dans l’aperçu.` : `Texte « ${item.name} » ajouté à la tête de lecture : écris ton texte dans Propriétés.` });
+    onNotice({ kind: 'ok', text: item.text ? T('« {0} » ajouté : déplace-le et redimensionne-le dans l’aperçu.', item.name) : T('Texte « {0} » ajouté à la tête de lecture : écris ton texte dans Propriétés.', item.name) });
   };
   return (
     <div className="lp-split">
       <SideMenu
         items={[
-          { id: 'basic', label: 'Basique', count: GROUPS.basic.length },
-          { id: 'bubble', label: 'Bulles', count: GROUPS.bubble.length },
-          { id: 'effects', label: 'Effets', count: GROUPS.effects.length },
-          { id: 'shapes', label: 'Formes', count: GROUPS.shapes.length },
-          { id: 'emojis', label: 'Émojis', count: GROUPS.emojis.length },
+          { id: 'basic', label: T('Basique'), count: GROUPS.basic.length },
+          { id: 'bubble', label: T('Bulles'), count: GROUPS.bubble.length },
+          { id: 'effects', label: T('Effets'), count: GROUPS.effects.length },
+          { id: 'shapes', label: T('Formes'), count: GROUPS.shapes.length },
+          { id: 'emojis', label: T('Émojis'), count: GROUPS.emojis.length },
         ]}
         value={group}
         onChange={setGroup}
       />
       <div className="fx-panel">
         <div className="fx-target">
-          <span className="muted">Clique pour ajouter un texte à la tête de lecture.</span>
+          <span className="muted">{T('Clique pour ajouter un texte à la tête de lecture.')}</span>
         </div>
         <div className="fx-grid text-grid">
           {GROUPS[group].map((item) => (
             <SampleTile
               key={item.id}
               style={item.style}
-              text={item.text ?? (group === 'bubble' ? 'Salut !' : 'Texte')}
+              text={item.text ?? (group === 'bubble' ? T('Salut !') : T('Texte'))}
               sticker={item.sticker}
               size={group === 'bubble' ? 250 : group === 'shapes' ? 400 : group === 'emojis' ? 700 : 320}
               label={item.name}

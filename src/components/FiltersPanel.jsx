@@ -1,21 +1,25 @@
 import { useEffect, useRef, useState } from 'react';
 import { adjustmentFilter, DEFAULT_FILTER_AMOUNT, FILTER_CATEGORIES, filterInfo, PRESETS } from '../filters.js';
 import { gpuEngine } from '../gpu/engine.js';
-import { sampleScene } from './EffectsPanel.jsx';
+import { playComparison, previewFiles, TILE_H as TH, TILE_W as TW, usePreviewPictures, useSeen } from '../previewPictures.js';
 import SideMenu from './SideMenu.jsx';
+import { T } from '../i18n.js';
 
 export const FILTER_MIME = 'application/x-cupkata-filter';
-const TW = 160;
-const TH = 90;
 
-function FilterTile({ id, name, custom, active, onApply }) {
+// The picture with the filter at the strength it gets when applied; hovering compares it with the original.
+function FilterTile({ id, name, custom, picture, active, onApply }) {
   const ref = useRef(null);
+  const [hover, setHover] = useState(false);
+  const seen = useSeen(ref);
   useEffect(() => {
+    if (!seen || !picture) return undefined;
     const info = filterInfo(id, custom);
     const ctx = ref.current.getContext('2d');
-    if (!info) return;
-    ctx.drawImage(gpuEngine(TW, TH, 'lut-tiles').renderLut(sampleScene(), info.id, info.data, info.size, 1), 0, 0);
-  }, [id, custom]);
+    if (!info) return undefined;
+    ctx.drawImage(gpuEngine(TW, TH, 'lut-tiles').renderLut(picture, info.id, info.data, info.size, DEFAULT_FILTER_AMOUNT), 0, 0);
+    return hover ? playComparison(ctx, picture) : undefined;
+  }, [id, custom, picture, hover, seen]);
   return (
     <button
       className={`fx-tile ${active ? 'active' : ''}`}
@@ -25,7 +29,9 @@ function FilterTile({ id, name, custom, active, onApply }) {
         e.dataTransfer.effectAllowed = 'copy';
       }}
       onClick={() => onApply(id)}
-      title={`${name} — clique pour l'appliquer au clip sélectionné, ou glisse-le sur un clip`}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      title={T("{0} — clique pour l'appliquer au clip sélectionné, ou glisse-le sur un clip", name)}
     >
       <canvas ref={ref} width={TW} height={TH} />
       <span>{name}</span>
@@ -34,10 +40,10 @@ function FilterTile({ id, name, custom, active, onApply }) {
 }
 
 const ADJUSTMENTS = [
-  { key: 'exposure', label: 'Exposition', min: -1, max: 1 },
-  { key: 'contrast', label: 'Contraste', min: -0.5, max: 0.5 },
-  { key: 'saturation', label: 'Saturation', min: -1, max: 1 },
-  { key: 'temperature', label: 'Température', min: -1, max: 1 },
+  { key: 'exposure', label: T('Exposition'), min: -1, max: 1 },
+  { key: 'contrast', label: T('Contraste'), min: -0.5, max: 0.5 },
+  { key: 'saturation', label: T('Saturation'), min: -1, max: 1 },
+  { key: 'temperature', label: T('Température'), min: -1, max: 1 },
 ];
 const NO_ADJUSTMENT = { exposure: 0, contrast: 0, saturation: 0, temperature: 0 };
 
@@ -46,15 +52,15 @@ function AdjustmentLayer({ custom, total, dispatch, onNotice }) {
   const [values, setValues] = useState(NO_ADJUSTMENT);
   const unchanged = ADJUSTMENTS.every(({ key }) => values[key] === 0);
   const add = () => {
-    const filter = adjustmentFilter(values, `Réglage ${custom.length + 1}`);
+    const filter = adjustmentFilter(values, T('Réglage {0}', custom.length + 1));
     dispatch({ type: 'ADD_FILTER', filter });
     dispatch({ type: 'ADD_FILTER_ITEM', filterId: filter.id, start: 0, amount: 1, duration: total > 0 ? total : undefined, fade: 0 });
     setValues(NO_ADJUSTMENT);
-    onNotice({ kind: 'ok', text: 'Calque de réglage ajouté sur la piste Filtres : tu peux le déplacer et le raccourcir.' });
+    onNotice({ kind: 'ok', text: T('Calque de réglage ajouté sur la piste Filtres : tu peux le déplacer et le raccourcir.') });
   };
   return (
     <details className="adjust-layer">
-      <summary>Calque de réglage</summary>
+      <summary>{T('Calque de réglage')}</summary>
       {ADJUSTMENTS.map(({ key, label, min, max }) => (
         <label className="field" key={key}>
           {label}
@@ -62,24 +68,26 @@ function AdjustmentLayer({ custom, total, dispatch, onNotice }) {
         </label>
       ))}
       <button className="btn small primary" disabled={unchanged} onClick={add}>
-        Ajouter le calque
+       {T('Ajouter le calque')}
       </button>
     </details>
   );
 }
 
-export default function FiltersPanel({ clip, media, custom, time, total = 0, dispatch, onNotice }) {
-  const [cat, setCat] = useState('Tous');
+export default function FiltersPanel({ clip, media, clips, library, custom, time, total = 0, dispatch, onNotice }) {
+  const [cat, setCat] = useState(T('Tous'));
   const onClip = clip?.track === 'video';
   const onItem = clip?.track === 'filter';
   const current = onClip || onItem ? clip.filter : null;
+  const files = previewFiles(clips, library, [onClip ? clip.mediaId : undefined]);
+  const picture = usePreviewPictures(files, 1)?.[0];
 
   // Clip selected: filter on that clip. Filter-track item selected: change it. Nothing: new item at the playhead.
   const apply = (id) => {
     if (!onClip && !onItem) {
       if (!id) return;
       dispatch({ type: 'ADD_FILTER_ITEM', filterId: id, start: time });
-      onNotice({ kind: 'ok', text: 'Filtre posé sur la piste Filtres : règle sa durée et ses fondus dans Propriétés.' });
+      onNotice({ kind: 'ok', text: T('Filtre posé sur la piste Filtres : règle sa durée et ses fondus dans Propriétés.') });
       return;
     }
     if (onItem && !id) {
@@ -97,14 +105,14 @@ export default function FiltersPanel({ clip, media, custom, time, total = 0, dis
     const bad = results.filter((r) => r.error);
     if (bad.length) onNotice({ kind: 'error', text: bad.map((b) => `${b.name} : ${b.error}`).join(' — ') });
     else if (ok.length) {
-      setCat('Importés');
-      onNotice({ kind: 'ok', text: `${ok.length} filtre${ok.length > 1 ? 's' : ''} importé${ok.length > 1 ? 's' : ''}` });
+      setCat(T('Importés'));
+      onNotice({ kind: 'ok', text: T('{0} filtre{1} importé{2}', ok.length, ok.length > 1 ? 's' : '', ok.length > 1 ? 's' : '') });
     }
   }
 
-  const cats = ['Tous', ...FILTER_CATEGORIES, ...(custom.length ? ['Importés'] : [])];
-  const presets = cat === 'Tous' ? PRESETS : PRESETS.filter((p) => p.cat === cat);
-  const imported = cat === 'Tous' || cat === 'Importés' ? custom : [];
+  const cats = [T('Tous'), ...FILTER_CATEGORIES, ...(custom.length ? [T('Importés')] : [])];
+  const presets = cat === T('Tous') ? PRESETS : PRESETS.filter((p) => p.cat === cat);
+  const imported = cat === T('Tous') || cat === T('Importés') ? custom : [];
 
   return (
     <div className="lp-split">
@@ -113,9 +121,9 @@ export default function FiltersPanel({ clip, media, custom, time, total = 0, dis
           ...cats.map((c) => ({
             id: c,
             label: c,
-            count: c === 'Tous' ? PRESETS.length + custom.length : c === 'Importés' ? custom.length : PRESETS.filter((p) => p.cat === c).length,
+            count: c === T('Tous') ? PRESETS.length + custom.length : c === T('Importés') ? custom.length : PRESETS.filter((p) => p.cat === c).length,
           })),
-          { id: 'import', label: '+ Importer .cube', onClick: importCube, title: 'Ajouter tes propres filtres au format .cube (LUT 3D)' },
+          { id: 'import', label: T('+ Importer .cube'), onClick: importCube, title: T('Ajouter tes propres filtres au format .cube (LUT 3D)') },
         ]}
         value={cat}
         onChange={setCat}
@@ -125,30 +133,31 @@ export default function FiltersPanel({ clip, media, custom, time, total = 0, dis
       <div className="fx-target">
         {onClip && (
           <>
-            <span className="muted">Clip :</span> {media?.name || 'clip'}
+            <span className="muted">{T('Clip :')}</span> {media?.name || T('clip')}
             {current && (
               <button className="btn ghost small" onClick={() => apply(null)}>
-                Retirer le filtre
+               {T('Retirer le filtre')}
               </button>
             )}
           </>
         )}
         {onItem && (
           <>
-            <span className="muted">Piste Filtres :</span> clique un filtre pour le remplacer
+            <span className="muted">{T('Piste Filtres :')}</span> {T('clique un filtre pour le remplacer')}
             <button className="btn ghost small" onClick={() => apply(null)}>
-              Supprimer
+             {T('Supprimer')}
             </button>
           </>
         )}
-        {!onClip && !onItem && <span className="muted">Clique un filtre pour le poser sur la piste Filtres, ou glisse-le sur un clip.</span>}
+        {!onClip && !onItem && <span className="muted">{T('Clique un filtre pour le poser sur la piste Filtres, ou glisse-le sur un clip.')}</span>}
+        <span className="muted fx-source">{files.length ? T('Aperçu avec tes médias. Survole une vignette pour comparer avant et après.') : T("Aperçu avec une photo d'exemple. Survole une vignette pour comparer avant et après.")}</span>
       </div>
       <div className="fx-grid">
         {presets.map((p) => (
-          <FilterTile key={p.id} id={p.id} name={p.name} custom={custom} active={current?.id === p.id} onApply={apply} />
+          <FilterTile key={p.id} id={p.id} name={p.name} custom={custom} picture={picture} active={current?.id === p.id} onApply={apply} />
         ))}
         {imported.map((f) => (
-          <FilterTile key={f.id} id={f.id} name={f.name} custom={custom} active={current?.id === f.id} onApply={apply} />
+          <FilterTile key={f.id} id={f.id} name={f.name} custom={custom} picture={picture} active={current?.id === f.id} onApply={apply} />
         ))}
       </div>
     </div>

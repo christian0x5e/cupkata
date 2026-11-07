@@ -1,8 +1,9 @@
 import { shiftKeyframes, stillKeyframes, TRANSFORM_PROPS, valueAt } from './keyframes.js';
+import { T } from './i18n.js';
+import { getSetting } from './settings.js';
 
 export const MEDIA_MIME = 'application/x-cupkata-media';
 export const MEDIA_LIST_MIME = 'application/x-cupkata-media-list';
-export const IMAGE_DEFAULT_DURATION = 5;
 const EPS = 1e-6;
 const MIN_PART = 0.05;
 
@@ -43,10 +44,10 @@ export const FX_ITEM_DURATION = 3;
 export const FX_ITEM_FADE = 0.5;
 // Ready-made speed changes: the clip is cut in equal parts of its source, each with its own speed.
 export const SPEED_RAMPS = [
-  { id: 'rise', label: 'Accélération', speeds: [0.5, 0.75, 1, 1.5, 2, 3] },
-  { id: 'fall', label: 'Ralentissement', speeds: [3, 2, 1.5, 1, 0.75, 0.5] },
-  { id: 'hero', label: 'Moment fort', speeds: [3, 2, 0.75, 0.4, 0.4, 0.75, 2, 3] },
-  { id: 'pulse', label: 'Pulsation', speeds: [2, 0.5, 2, 0.5, 2, 0.5] },
+  { id: 'rise', label: T('Accélération'), speeds: [0.5, 0.75, 1, 1.5, 2, 3] },
+  { id: 'fall', label: T('Ralentissement'), speeds: [3, 2, 1.5, 1, 0.75, 0.5] },
+  { id: 'hero', label: T('Moment fort'), speeds: [3, 2, 0.75, 0.4, 0.4, 0.75, 2, 3] },
+  { id: 'pulse', label: T('Pulsation'), speeds: [2, 0.5, 2, 0.5, 2, 0.5] },
 ];
 const UNFADED_FX = new Set(['theend', 'opening', 'irisout', 'irisin', 'countdown']);
 
@@ -62,20 +63,45 @@ export function effectEnvelope(item, tau) {
 }
 
 export const TRANSITIONS = [
-  { id: 'fade', label: 'Fondu enchaîné' },
-  { id: 'fadeblack', label: 'Fondu au noir' },
-  { id: 'fadewhite', label: 'Flash blanc' },
-  { id: 'wipeleft', label: 'Balayage ←' },
-  { id: 'wiperight', label: 'Balayage →' },
-  { id: 'wipeup', label: 'Balayage ↑' },
-  { id: 'wipedown', label: 'Balayage ↓' },
-  { id: 'slideleft', label: 'Glissement ←' },
-  { id: 'slideright', label: 'Glissement →' },
-  { id: 'slideup', label: 'Glissement ↑' },
-  { id: 'slidedown', label: 'Glissement ↓' },
-  { id: 'circleopen', label: 'Cercle' },
-  { id: 'zoomin', label: 'Zoom' },
-  { id: 'hblur', label: 'Flou de mouvement' },
+  { id: 'fade', label: T('Fondu enchaîné') },
+  { id: 'fadeblack', label: T('Fondu au noir') },
+  { id: 'fadewhite', label: T('Flash blanc') },
+  { id: 'wipeleft', label: T('Balayage ←') },
+  { id: 'wiperight', label: T('Balayage →') },
+  { id: 'wipeup', label: T('Balayage ↑') },
+  { id: 'wipedown', label: T('Balayage ↓') },
+  { id: 'slideleft', label: T('Glissement ←') },
+  { id: 'slideright', label: T('Glissement →') },
+  { id: 'slideup', label: T('Glissement ↑') },
+  { id: 'slidedown', label: T('Glissement ↓') },
+  { id: 'circleopen', label: T('Cercle') },
+  { id: 'zoomin', label: T('Zoom') },
+  { id: 'hblur', label: T('Flou de mouvement') },
+  { id: 'smoothleft', label: T('Balayage doux ←') },
+  { id: 'smoothright', label: T('Balayage doux →') },
+  { id: 'smoothup', label: T('Balayage doux ↑') },
+  { id: 'smoothdown', label: T('Balayage doux ↓') },
+  { id: 'circleclose', label: T('Cercle fermant') },
+  { id: 'radial', label: T('Radar') },
+  { id: 'vertopen', label: T('Ouverture verticale') },
+  { id: 'vertclose', label: T('Fermeture verticale') },
+  { id: 'horzopen', label: T('Ouverture horizontale') },
+  { id: 'horzclose', label: T('Fermeture horizontale') },
+  { id: 'diagtl', label: T('Diagonale ↖') },
+  { id: 'diagtr', label: T('Diagonale ↗') },
+  { id: 'diagbl', label: T('Diagonale ↙') },
+  { id: 'diagbr', label: T('Diagonale ↘') },
+  { id: 'rectcrop', label: T('Rectangle') },
+  { id: 'pixelize', label: T('Pixellisation') },
+  { id: 'squeezeh', label: T('Écrasement') },
+  { id: 'coverleft', label: T('Recouvrement ←') },
+  { id: 'coverright', label: T('Recouvrement →') },
+  { id: 'coverup', label: T('Recouvrement ↑') },
+  { id: 'coverdown', label: T('Recouvrement ↓') },
+  { id: 'revealleft', label: T('Dévoilement ←') },
+  { id: 'revealright', label: T('Dévoilement →') },
+  { id: 'revealup', label: T('Dévoilement ↑') },
+  { id: 'revealdown', label: T('Dévoilement ↓') },
 ];
 
 // Background of a main-track clip where its picture doesn't fill the frame (e.g. a horizontal video
@@ -211,7 +237,7 @@ function placeItem(clips, track, action, duration) {
 
 // selectedId: the clip shown in Propriétés. multi: the clips selected together (2 or more), else empty.
 // clipboard: copies of the clips from the last Copy. pasted: where the last paste ended (moves the playhead).
-export const initialState = { media: [], clips: [], filters: [], markers: [], selectedId: null, multi: [], clipboard: [], pasted: null, past: [], future: [] };
+export const initialState = { media: [], clips: [], filters: [], markers: [], selectedId: null, multi: [], transitionId: null, clipboard: [], pasted: null, past: [], future: [] };
 
 // "Without effects": the clip as filmed, without effect, filter, colour settings or transition.
 const withoutEffects = (c) => ({ ...c, effect: null, filter: null, color: undefined, transition: null });
@@ -358,7 +384,7 @@ function addClips(state, { mediaIds, track, start = null, lane = 0, magnet = tru
     if (!list.length) continue;
     const made = list.map((m) => ({
       id: crypto.randomUUID(), mediaId: m.id, track: kind, lane: 0, start: 0, in: 0,
-      duration: m.type === 'image' ? IMAGE_DEFAULT_DURATION : m.duration,
+      duration: m.type === 'image' ? getSetting('imageDuration') : m.duration,
       volume: 1, fadeIn: 0, fadeOut: 0, muted: false,
     }));
     const span = made.reduce((t, c) => t + c.duration, 0);
@@ -623,12 +649,15 @@ export function reducer(state, action) {
   if (next === state) return state;
   let multi = next.multi;
   if (multi === state.multi && next.selectedId !== state.selectedId) multi = [];
+  // A selected transition gives way to a selected clip, and goes when the transition does.
+  const transitionId = next.transitionId && !next.selectedId && !['SELECT', 'SELECT_MANY', 'SELECT_TOGGLE'].includes(action.type)
+    && next.clips.find((c) => c.id === next.transitionId)?.transition?.type ? next.transitionId : null;
   if (multi.length && next.clips !== state.clips) {
     const ids = new Set(next.clips.map((c) => c.id));
     const kept = multi.filter((id) => ids.has(id));
     if (kept.length !== multi.length) multi = kept.length >= 2 ? kept : [];
   }
-  return multi === next.multi ? next : { ...next, multi };
+  return multi === next.multi && transitionId === next.transitionId ? next : { ...next, multi, transitionId };
 }
 
 function applyAction(state, action) {
@@ -911,7 +940,7 @@ function applyAction(state, action) {
       if (!m) return state;
       const track = action.track || defaultTrack(m);
       if (!acceptsTrack(m, track)) return state;
-      const duration = m.type === 'image' ? IMAGE_DEFAULT_DURATION : m.duration;
+      const duration = m.type === 'image' ? getSetting('imageDuration') : m.duration;
       const { start, lane } = placeItem(state.clips, track, action, duration);
       const clip = {
         id: crypto.randomUUID(), mediaId: m.id, track, lane, start, in: 0, duration,
@@ -926,7 +955,7 @@ function applyAction(state, action) {
       const { start, lane } = placeItem(state.clips, 'text', { ...action, start: action.start ?? 0 }, duration);
       const clip = {
         id: crypto.randomUUID(), mediaId: null, track: 'text', lane, start, in: 0, duration,
-        text: action.text ?? 'Ton texte', style: { ...action.style }, ...(action.sticker ? { sticker: action.sticker } : {}),
+        text: action.text ?? T('Ton texte'), style: { ...action.style }, ...(action.sticker ? { sticker: action.sticker } : {}),
       };
       return commit(state, [...state.clips, clip], { selectedId: clip.id });
     }
@@ -988,7 +1017,7 @@ function applyAction(state, action) {
       return { ...state, clips: state.clips.map((c) => (c.id === action.id ? { ...c, ...action.patch } : c)) };
 
     // Speed change: the clip keeps the same part of its source, so its length changes. On the main
-    // video track the clips after it follow (like CapCut); elsewhere they move only if it now reaches them.
+    // video track the clips after it follow; elsewhere they move only if it now reaches them.
     case 'SET_SPEED': {
       const c = state.clips.find((x) => x.id === action.id);
       if (!c) return state;
@@ -1154,6 +1183,15 @@ function applyAction(state, action) {
 
     case 'SELECT':
       return { ...state, selectedId: action.id };
+
+    case 'SELECT_TRANSITION':
+      return { ...state, transitionId: action.id, selectedId: null, multi: [] };
+
+    case 'REMOVE_TRANSITION': {
+      const ids = new Set(action.ids);
+      if (!state.clips.some((c) => ids.has(c.id) && c.transition)) return state;
+      return commit(state, state.clips.map((c) => (ids.has(c.id) && c.transition ? { ...c, transition: null } : c)));
+    }
 
     case 'UNDO': {
       if (!state.past.length) return state;

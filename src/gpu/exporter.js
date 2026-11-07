@@ -1,6 +1,7 @@
 import { gpuEngine } from './engine.js';
 import { clipTransform, overlayBox } from '../project.js';
 import { drawBox, drawMoved } from '../keyframes.js';
+import { T } from '../i18n.js';
 
 function canvas2d(width, height) {
   const canvas = document.createElement('canvas');
@@ -38,7 +39,7 @@ export async function prerenderGpu(api, project, token, { onProgress, isCancelle
     const engine = job.effect && gpuEngine(job.width, job.height, 'export');
     const paint = job.motion && motionPainter(job);
     for (let i = 0; i < job.frames; i++) {
-      if (isCancelled()) throw new Error('Export annulé');
+      if (isCancelled()) throw new Error(T('Export annulé'));
       const frame = await api.gpuRead(job.jobId);
       if (!frame) break;
       const tau = i / job.fps + job.tau0;

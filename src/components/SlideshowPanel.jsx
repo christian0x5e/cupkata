@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import { end, laneOf, naturalOrder, TRANSITIONS } from '../project.js';
 import { formatShort } from '../format.js';
+import { Play } from './icons.jsx';
+import { DECIMAL, T } from '../i18n.js';
 
 const api = window.cupkata;
 
@@ -27,10 +29,10 @@ export default function SlideshowPanel({ media, clips, dispatch, onNotice }) {
   const count = length > 0 ? Math.ceil(length / duration - 1e-6) : 0;
 
   let problem = null;
-  if (!photos.length) problem = 'Importe d’abord des photos dans « Tes médias ».';
-  else if (!chosen.length) problem = 'Choisis au moins une photo.';
-  else if (mode === 'music' && !audioEnd && !music) problem = 'Pose une musique sur la piste Audio, ou choisis-en une ci-dessous.';
-  else if (mode === 'music' && !(length > 0)) problem = 'La musique se termine avant la fin de la piste Vidéo : il ne reste rien à remplir.';
+  if (!photos.length) problem = T('Importe d’abord des photos dans « Tes médias ».');
+  else if (!chosen.length) problem = T('Choisis au moins une photo.');
+  else if (mode === 'music' && !audioEnd && !music) problem = T('Pose une musique sur la piste Audio, ou choisis-en une ci-dessous.');
+  else if (mode === 'music' && !(length > 0)) problem = T('La musique se termine avant la fin de la piste Vidéo : il ne reste rien à remplir.');
 
   function create() {
     dispatch({
@@ -44,16 +46,16 @@ export default function SlideshowPanel({ media, clips, dispatch, onNotice }) {
       transition: transition && duration > 0.6 ? { type: transition, duration: Math.min(1, duration / 3) } : null,
       effect: zoom ? { type: 'zoomslow', intensity: 0.6 } : null,
     });
-    onNotice({ kind: 'ok', text: `Diaporama créé : ${count} images. Elles restent sélectionnées : change leur durée d’un coup dans Propriétés.` });
+    onNotice({ kind: 'ok', text: T('Diaporama créé : {0} images. Elles restent sélectionnées : change leur durée d’un coup dans Propriétés.', count) });
   }
 
   return (
     <div className="bin">
       <div className="bin-body slideshow">
         <div className="bin-filters">
-          <strong>Photos ({chosen.length} / {photos.length})</strong>
-          <button className="btn small" style={{ marginLeft: 'auto' }} onClick={() => setOff(new Set())}>Toutes</button>
-          <button className="btn small" onClick={() => setOff(new Set(photos.map((m) => m.id)))}>Aucune</button>
+          <strong>{T('Photos (')}{chosen.length} / {photos.length})</strong>
+          <button className="btn small" style={{ marginLeft: 'auto' }} onClick={() => setOff(new Set())}>{T('Toutes')}</button>
+          <button className="btn small" onClick={() => setOff(new Set(photos.map((m) => m.id)))}>{T('Aucune')}</button>
         </div>
         <div className="slide-grid">
           {photos.map((m) => {
@@ -81,42 +83,42 @@ export default function SlideshowPanel({ media, clips, dispatch, onNotice }) {
 
         <label className="field">
           <span className="field-row">
-            <span>Durée de chaque photo</span>
-            <span className="field-value">{String(duration).replace('.', ',')} s</span>
+            <span>{T('Durée de chaque photo')}</span>
+            <span className="field-value">{String(duration).replace('.', DECIMAL)} s</span>
           </span>
           <input type="range" min={0.5} max={10} step={0.5} value={duration} onChange={(e) => setDuration(Number(e.target.value))} />
         </label>
 
         <label className="field">
-          <span>Répéter</span>
+          <span>{T('Répéter')}</span>
           <select value={mode} onChange={(e) => setMode(e.target.value)}>
-            <option value="music">En boucle jusqu’à la fin de la musique</option>
-            <option value="rounds">Un nombre de tours</option>
+            <option value="music">{T('En boucle jusqu’à la fin de la musique')}</option>
+            <option value="rounds">{T('Un nombre de tours')}</option>
           </select>
         </label>
         {mode === 'music' ? (
           <label className="field">
-            <span>Musique</span>
+            <span>{T('Musique')}</span>
             <select value={musicId} onChange={(e) => setMusicId(e.target.value)}>
-              <option value="">{audioEnd ? `Celle de la piste Audio (finit à ${formatShort(audioEnd)})` : 'Aucune sur la piste Audio'}</option>
+              <option value="">{audioEnd ? T('Celle de la piste Audio (finit à {0})', formatShort(audioEnd)) : T('Aucune sur la piste Audio')}</option>
               {sounds.map((m) => (
                 <option key={m.id} value={m.id}>
-                  Ajouter : {m.name} ({formatShort(m.duration)})
+                  {T('Ajouter :')} {m.name} ({formatShort(m.duration)})
                 </option>
               ))}
             </select>
           </label>
         ) : (
           <label className="field">
-            <span>Nombre de tours</span>
+            <span>{T('Nombre de tours')}</span>
             <input type="number" min={1} max={100} value={rounds} onChange={(e) => setRounds(Math.max(1, Math.min(100, Number(e.target.value) || 1)))} />
           </label>
         )}
 
         <label className="field">
-          <span>Transition entre les photos</span>
+          <span>{T('Transition entre les photos')}</span>
           <select value={transition} onChange={(e) => setTransition(e.target.value)}>
-            <option value="">Aucune</option>
+            <option value="">{T('Aucune')}</option>
             {TRANSITIONS.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.label}
@@ -126,18 +128,18 @@ export default function SlideshowPanel({ media, clips, dispatch, onNotice }) {
         </label>
         <label className="toggle">
           <input type="checkbox" checked={shuffle} onChange={(e) => setShuffle(e.target.checked)} />
-          Ordre mélangé à chaque tour
+          {T('Ordre mélangé à chaque tour')}
         </label>
         <label className="toggle">
           <input type="checkbox" checked={zoom} onChange={(e) => setZoom(e.target.checked)} />
-          Zoom lent sur chaque photo
+          {T('Zoom lent sur chaque photo')}
         </label>
 
         <div className={`slide-summary ${problem ? 'bad' : ''}`}>
-          {problem || `${count} images · ${formatShort(length)}${start > 0 ? `, après la vidéo déjà en place (à ${formatShort(start)})` : ''}`}
+          {problem || T('{0} images · {1}{2}', count, formatShort(length), start > 0 ? T(', après la vidéo déjà en place (à {0})', formatShort(start)) : '')}
         </div>
         <button className="btn primary" disabled={!!problem} onClick={create}>
-          ▶ Créer le diaporama
+          <Play fill="currentColor" /> {T('Créer le diaporama')}
         </button>
       </div>
     </div>

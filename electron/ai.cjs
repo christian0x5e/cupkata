@@ -1,6 +1,7 @@
 // Open-source AI tools that run on this computer (models downloaded once into the models folder):
 // background removal (MODNet, Apache-2.0), silence detection (Silero VAD, MIT), subtitle translation
 // (OPUS-MT by Helsinki-NLP, Apache-2.0) and text-to-speech (MMS-TTS by Meta, CC BY-NC 4.0).
+const { T } = require('./i18n.cjs');
 const fs = require('fs');
 const path = require('path');
 const { spawn, execFile } = require('child_process');
@@ -43,7 +44,7 @@ function once(key, load) {
   return loaded.get(key);
 }
 
-const cancelledError = () => new Error('Opération annulée');
+const cancelledError = () => new Error(T('Opération annulée'));
 
 function wav16(samples, rate) {
   const data = Buffer.alloc(samples.length * 2);
@@ -249,7 +250,7 @@ function translationPlan(from, to) {
 
 async function translateTexts({ texts, from, to }, { cacheDir, onProgress, isCancelled }) {
   const plan = translationPlan(from, to);
-  if (!plan) throw new Error('Cette paire de langues n’est pas disponible.');
+  if (!plan) throw new Error(T('Cette paire de langues n’est pas disponible.'));
   let current = texts.map((s) => String(s || '').slice(0, 500));
   for (const [n, pair] of plan.entries()) {
     const t = await lib(cacheDir);
@@ -271,9 +272,9 @@ const TTS_LANGS = { fr: 'fra', en: 'eng', es: 'spa', de: 'deu', pt: 'por' };
 
 async function speak({ text, lang = 'fr', rate = 1 }, { cacheDir, out, onProgress }) {
   const code = TTS_LANGS[lang];
-  if (!code) throw new Error('Langue non disponible pour la voix.');
+  if (!code) throw new Error(T('Langue non disponible pour la voix.'));
   const words = String(text || '').trim().slice(0, 1000);
-  if (!words) throw new Error('Le texte est vide.');
+  if (!words) throw new Error(T('Le texte est vide.'));
   const t = await lib(cacheDir);
   onProgress({ phase: 'model', progress: 0 });
   const tts = await once(`tts-${code}`, () => t.pipeline('text-to-speech', `Xenova/mms-tts-${code}`, { dtype: 'q8', progress_callback: progressOf(onProgress) }));
@@ -370,7 +371,7 @@ async function trackSubject({ file, start = 0, span, width, height }, { cacheDir
     for await (const chunk of reader.stdout) {
       pending = pending.length ? Buffer.concat([pending, chunk]) : chunk;
       while (pending.length >= frameBytes) {
-        if (isCancelled()) throw new Error('Opération annulée');
+        if (isCancelled()) throw new Error(T('Opération annulée'));
         const frame = pending.subarray(0, frameBytes);
         pending = pending.subarray(frameBytes);
         const image = new t.RawImage(new Uint8ClampedArray(frame), w, h, 3);
